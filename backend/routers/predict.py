@@ -5,13 +5,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Dict, List, Any
 import pandas as pd
+import os
 
 from models.experiment_store import get_db, ExperimentStore
+from services.training_engine import training_engine
 
 router = APIRouter(prefix="/predict", tags=["prediction"])
 
 
-@router.post("/single")
+@router.post("/{model_id}")
 async def predict_single(
     model_id: str,
     features: Dict[str, Any],
@@ -25,24 +27,48 @@ async def predict_single(
         if not run or run.status != "completed":
             raise HTTPException(status_code=404, detail="Trained model not found")
         
-        # TODO: Load model and make prediction
-        # model = load_model(run.model_path)
-        # prediction = model.predict([list(features.values())])
+        if not run.model_path or not os.path.exists(run.model_path):
+            raise HTTPException(status_code=404, detail="Model file not found")
         
-        # Placeholder response
-        prediction = {
-            "prediction": "placeholder_prediction",
-            "confidence": 0.85,
+        # Convert features to DataFrame
+        df = pd.DataFrame([features])
+        
+        # Load model and make prediction
+        predictions = training_engine.predict(run.model_path, df)
+        
+        # Try to get prediction probabilities if available
+        try:
+            probabilities = training_engine.predict_proba(run.model_path, df)
+            prob_dict = {f'prob_class_{i}': float(prob) for i, prob in enumerate(probabilities[0])}
+        except:
+            prob_dict = {}
+        
+        prediction_result = {
+            "prediction": predictions[0].tolist() if hasattr(predictions[0], 'tolist') else predictions[0],
+            "probabilities": prob_dict,
             "model_id": model_id,
-            "features_used": features
+            "algorithm": run.algorithm,
+            "features_used": features,
+            "prediction_timestamp": pd.Timestamp.now().isoformat()
         }
         
-        return prediction
+        return prediction_result
         
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid model ID")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+
+# Add API endpoint alias for model inference
+@router.post("/api/{model_id}/predict")
+async def predict_api(
+    model_id: str,
+    features: Dict[str, Any],
+    db: Session = Depends(get_db)
+):
+    """Inference API endpoint for model predictions."""
+    return await predict_single(model_id, features, db)
 
 
 @router.post("/batch")
@@ -59,26 +85,44 @@ async def predict_batch(
         if not run or run.status != "completed":
             raise HTTPException(status_code=404, detail="Trained model not found")
         
-        # TODO: Load model and make batch predictions
-        # model = load_model(run.model_path)
-        # df = pd.DataFrame(features_list)
-        # predictions = model.predict(df)
+        if not run.model_path or not os.path.exists(run.model_path):
+            raise HTTPException(status_code=404, detail="Model file not found")
         
-        # Placeholder response
-        predictions = [
-            {
-                "prediction": f"placeholder_prediction_{i}",
-                "confidence": 0.85,
-                "index": i
+        # Convert features to DataFrame
+        df = pd.DataFrame(features_list)
+        
+        # Load model and make predictions
+        predictions = training_engine.predict(run.model_path, df)
+        
+        # Try to get prediction probabilities if available
+        try:
+            probabilities = training_engine.predict_proba(run.model_path, df)
+            prob_data = [
+                {f'prob_class_{i}': float(prob) for i, prob in enumerate(prob_row)}
+                for prob_row in probabilities
+            ]
+        except:
+            prob_data = [{}] * len(predictions)
+        
+        batch_results = []
+        for i, (prediction, prob_dict, original_features) in enumerate(zip(predictions, prob_data, features_list)):
+            result = {
+                "id": i,
+                "prediction": prediction.tolist() if hasattr(prediction, 'tolist') else prediction,
+                "probabilities": prob_dict,
+                "features_used": original_features
             }
-            for i, _ in enumerate(features_list)
-        ]
+            batch_results.append(result)
         
-        return {
-            "predictions": predictions,
+        response = {
+            "predictions": batch_results,
             "model_id": model_id,
-            "total_predictions": len(predictions)
+            "algorithm": run.algorithm,
+            "batch_size": len(features_list),
+            "prediction_timestamp": pd.Timestamp.now().isoformat()
         }
+        
+        return response
         
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid model ID")
@@ -88,32 +132,30 @@ async def predict_batch(
 
 @router.get("/models")
 async def list_available_models(db: Session = Depends(get_db)):
-    """List all available trained models for prediction."""
+    """List all trained models available for prediction."""
     try:
         exp_store = ExperimentStore(db)
         experiments = exp_store.get_experiments()
         
-        models = []
+        available_models = []
         for experiment in experiments:
             runs = exp_store.get_runs_by_experiment(experiment.id)
-            completed_runs = [run for run in runs if run.status == "completed"]
-            
-            for run in completed_runs:
-                model_info = {
-                    "model_id": str(run.id),
-                    "model_name": experiment.name,
-                    "algorithm": run.algorithm,
-                    "problem_type": experiment.problem_type,
-                    "target_column": experiment.target_column,
-                    "created_at": run.created_at.isoformat(),
-                    "validation_metrics": run.validation_metrics,
-                    "training_duration": run.training_duration_seconds
-                }
-                models.append(model_info)
+            for run in runs:
+                if run.status == "completed" and run.model_path and os.path.exists(run.model_path):
+                    model_info = {
+                        "model_id": run.id,
+                        "algorithm": run.algorithm,
+                        "dataset": run.dataset_name if hasattr(run, 'dataset_name') else experiment.dataset_id,
+                        "accuracy": run.accuracy if hasattr(run, 'accuracy') else None,
+                        "target_column": experiment.target_column,
+                        "created_at": run.created_at.isoformat() if run.created_at else None,
+                        "model_size_mb": round(os.path.getsize(run.model_path) / (1024 * 1024), 2) if run.model_path else None
+                    }
+                    available_models.append(model_info)
         
         return {
-            "models": models,
-            "total_count": len(models)
+            "available_models": available_models,
+            "total_count": len(available_models)
         }
         
     except Exception as e:
@@ -131,22 +173,21 @@ async def get_model_info(model_id: str, db: Session = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Model not found")
         
         model_info = {
-            "model_id": str(run.id),
-            "model_name": run.experiment.name,
+            "model_id": run.id,
             "algorithm": run.algorithm,
-            "problem_type": run.experiment.problem_type,
-            "target_column": run.experiment.target_column,
-            "dataset_id": run.experiment.dataset_id,
-            "hyperparameters": run.hyperparameters,
-            "training_metrics": run.training_metrics,
-            "validation_metrics": run.validation_metrics,
-            "test_metrics": run.test_metrics,
+            "dataset": run.dataset_name,
+            "target_column": run.target_column,
             "status": run.status,
-            "created_at": run.created_at.isoformat(),
-            "training_duration": run.training_duration_seconds,
-            "model_size_bytes": run.model_size_bytes,
-            "feature_count": run.feature_count
+            "accuracy": run.accuracy,
+            "hyperparameters": run.hyperparameters,
+            "training_duration": run.training_duration,
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+            "updated_at": run.updated_at.isoformat() if run.updated_at else None,
+            "model_available": run.model_path and os.path.exists(run.model_path) if run.model_path else False
         }
+        
+        if run.model_path and os.path.exists(run.model_path):
+            model_info["model_size_mb"] = round(os.path.getsize(run.model_path) / (1024 * 1024), 2)
         
         return model_info
         
