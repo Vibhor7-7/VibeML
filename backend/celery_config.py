@@ -18,11 +18,12 @@ load_dotenv()
 celery_app = Celery(
     'vibeml',
     broker=os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0'),
-    backend=os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+    backend=os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0'),
+    include=['scripts.celery_tasks']  # Explicitly include the tasks module
 )
 
-# Auto-discover tasks in the scripts module
-celery_app.autodiscover_tasks(['scripts'])
+# Auto-discover tasks in the scripts module (not needed with explicit include)
+# celery_app.autodiscover_tasks(['scripts'])
 
 # Celery configuration
 celery_app.conf.update(
