@@ -748,23 +748,139 @@ export default function Dashboard() {
             )}
 
             {activeTab === 'predict' && (
-              <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
-                <h2 className="text-2xl font-semibold mb-6 flex items-center text-white">
-                  <BarChart3 className="w-6 h-6 mr-3 text-orange-400" />
-                  Make Predictions
-                </h2>
-                <div className="space-y-6">
-                  <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center bg-gray-900/30">
-                    <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-white mb-2">Upload New Data</h3>
-                    <p className="text-gray-400 mb-4">Upload CSV file to make predictions</p>
-                    <button className="bg-gradient-to-r from-orange-600 to-orange-700 text-white px-6 py-3 rounded-md hover:from-orange-700 hover:to-orange-800 transition-all">
-                      Choose File
+              <div className="flex flex-row gap-8">
+                {/* Main Prediction Section */}
+                <div className="flex flex-col flex-1 max-w-3xl">
+                  <div className="flex flex-wrap justify-between gap-3 mb-6">
+                    <div className="flex min-w-72 flex-col gap-3">
+                      <p className="text-white text-3xl font-bold leading-tight">📊 Predictions</p>
+                      <p className="text-blue-300 text-sm font-normal">Use your trained model to make predictions on new data.</p>
+                    </div>
+                    <button className="bg-gray-700 text-white px-6 py-2 rounded-lg font-medium hover:bg-gray-600 transition-all">
+                      Upload New Dataset for Prediction
                     </button>
                   </div>
-                  <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
-                    <h3 className="text-lg font-medium text-white mb-4">Prediction Results</h3>
-                    <p className="text-gray-300">Upload data to see predictions here...</p>
+                  <div className="mb-6">
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 rounded-lg border border-gray-700 bg-gray-900 p-5">
+                      <div className="flex flex-col gap-1">
+                        <p className="text-white text-base font-bold">Prediction Options</p>
+                        <p className="text-blue-300 text-base font-normal">Step 1: Upload a CSV file to make predictions</p>
+                      </div>
+                      <button className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-all">
+                        Upload CSV
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mb-6">
+                    <div className="flex items-stretch justify-between gap-4 rounded-lg">
+                      <div className="flex flex-col gap-1 flex-[2_2_0px]">
+                        <p className="text-white text-base font-bold">Model Used: Random Forest Classifier</p>
+                        <p className="text-blue-300 text-sm font-normal">Last Trained: 2024-01-15 | Training Accuracy: 92% | Dataset: Customer Churn Data</p>
+                      </div>
+                      <div className="hidden md:block w-full max-w-xs aspect-video bg-gray-700 rounded-lg border border-gray-600"></div>
+                    </div>
+                  </div>
+                  {/* Prediction Table */}
+                  <div className="mb-6">
+                    <div className="overflow-x-auto rounded-lg border border-gray-700 bg-gray-900">
+                      <table className="min-w-full">
+                        <thead>
+                          <tr className="bg-gray-900">
+                            <th className="px-4 py-3 text-left text-white text-sm font-medium">Row ID</th>
+                            <th className="px-4 py-3 text-left text-white text-sm font-medium">Original Inputs</th>
+                            <th className="px-4 py-3 text-left text-white text-sm font-medium">Prediction</th>
+                            <th className="px-4 py-3 text-left text-white text-sm font-medium">Confidence</th>
+                            <th className="px-4 py-3 text-left text-white text-sm font-medium">Probability</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[1,2,3,4,5,6,7,8,9,10].map((row) => (
+                            <tr key={row} className="border-t border-gray-700">
+                              <td className="px-4 py-2 text-white text-sm">{row}</td>
+                              <td className="px-4 py-2 text-blue-300 text-sm">{'{feature1: value1, feature2: value2, ...}'}</td>
+                              <td className="px-4 py-2 text-sm">
+                                <button className="bg-gray-700 text-white px-4 py-2 rounded-lg font-medium w-full">
+                                  <span className="truncate">{row % 2 === 0 ? 'No Churn' : 'Churn'}</span>
+                                </button>
+                              </td>
+                              <td className="px-4 py-2 text-sm">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-20 h-1 rounded-full bg-gray-600 overflow-hidden">
+                                    <div className="h-1 rounded-full bg-blue-600" style={{width: `${80 + row}%`}}></div>
+                                  </div>
+                                  <p className="text-white text-sm font-medium">{80 + row}</p>
+                                </div>
+                              </td>
+                              <td className="px-4 py-2 text-sm">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-20 h-1 rounded-full bg-gray-600 overflow-hidden">
+                                    <div className="h-1 rounded-full bg-blue-600" style={{width: `${85 + row}%`}}></div>
+                                  </div>
+                                  <p className="text-white text-sm font-medium">{85 + row}</p>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  {/* Pagination */}
+                  <div className="flex items-center justify-center mb-6 gap-2">
+                    <button className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-700 text-white">
+                      {'<'}
+                    </button>
+                    <button className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold">1</button>
+                    <button className="w-8 h-8 rounded-full bg-gray-700 text-white">2</button>
+                    <button className="w-8 h-8 rounded-full bg-gray-700 text-white">3</button>
+                    <button className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-700 text-white">
+                      {'>'}
+                    </button>
+                  </div>
+                </div>
+                {/* Insights & Export Section */}
+                <div className="flex flex-col w-[360px]">
+                  <h2 className="text-white text-xl font-bold px-4 pb-3 pt-5">Insights</h2>
+                  <div className="flex flex-wrap gap-4 px-4 py-6">
+                    <div className="flex min-w-72 flex-1 flex-col gap-2 rounded-lg border border-gray-700 p-6 bg-gray-900">
+                      <p className="text-white text-base font-medium">Distribution of Predicted Values</p>
+                      <p className="text-white text-3xl font-bold truncate">20</p>
+                      <div className="flex gap-1">
+                        <p className="text-blue-300 text-base font-normal">Total</p>
+                        <p className="text-green-400 text-base font-medium">+5%</p>
+                      </div>
+                      <div className="grid min-h-[180px] grid-flow-col gap-6 grid-rows-[1fr_auto] items-end justify-items-center px-3">
+                        <div className="border-blue-300 bg-gray-700 border-t-2 w-full" style={{height: '40%'}}></div>
+                        <p className="text-blue-300 text-[13px] font-bold">Churn</p>
+                        <div className="border-blue-300 bg-gray-700 border-t-2 w-full" style={{height: '20%'}}></div>
+                        <p className="text-blue-300 text-[13px] font-bold">No Churn</p>
+                      </div>
+                    </div>
+                    <div className="flex min-w-72 flex-1 flex-col gap-2 rounded-lg border border-gray-700 p-6 bg-gray-900">
+                      <p className="text-white text-base font-medium">Confidence Score Histogram</p>
+                      <p className="text-white text-3xl font-bold truncate">85%</p>
+                      <div className="flex gap-1">
+                        <p className="text-blue-300 text-base font-normal">Average</p>
+                        <p className="text-red-400 text-base font-medium">-2%</p>
+                      </div>
+                      <div className="grid min-h-[180px] gap-x-4 gap-y-6 grid-cols-[auto_1fr] items-center py-3">
+                        <p className="text-blue-300 text-[13px] font-bold">70-80%</p>
+                        <div className="h-full flex-1"><div className="border-blue-300 bg-gray-700 border-r-2 h-full" style={{width: '40%'}}></div></div>
+                        <p className="text-blue-300 text-[13px] font-bold">80-90%</p>
+                        <div className="h-full flex-1"><div className="border-blue-300 bg-gray-700 border-r-2 h-full" style={{width: '60%'}}></div></div>
+                        <p className="text-blue-300 text-[13px] font-bold">90-100%</p>
+                        <div className="h-full flex-1"><div className="border-blue-300 bg-gray-700 border-r-2 h-full" style={{width: '10%'}}></div></div>
+                      </div>
+                    </div>
+                  </div>
+                  <h2 className="text-white text-xl font-bold px-4 pb-3 pt-5">Warnings</h2>
+                  <p className="text-white text-base font-normal pb-3 pt-1 px-4">No warnings to display.</p>
+                  <h2 className="text-white text-xl font-bold px-4 pb-3 pt-5">Download Options</h2>
+                  <div className="flex justify-center">
+                    <div className="flex flex-1 gap-3 max-w-xs flex-col items-stretch px-4 py-3">
+                      <button className="bg-gray-700 text-white px-6 py-2 rounded-lg font-bold w-full">Export as CSV</button>
+                      <button className="bg-gray-700 text-white px-6 py-2 rounded-lg font-bold w-full">Export as JSON</button>
+                    </div>
                   </div>
                 </div>
               </div>
