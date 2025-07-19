@@ -11,6 +11,40 @@ export default function Dashboard() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [showPreview, setShowPreview] = useState(false)
   const [previewData, setPreviewData] = useState<any[]>([])
+  const [selectedModel, setSelectedModel] = useState('')
+  const [autoMode, setAutoMode] = useState(false)
+  const [modelConfig, setModelConfig] = useState({
+    n_estimators: '',
+    max_depth: '',
+    criterion: 'gini'
+  })
+
+  const models = [
+    {
+      id: 'logistic_regression',
+      name: 'Logistic Regression',
+      description: 'A linear model for binary classification.',
+      image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCJbbw6xr3tTO7843lVsaL-ryYCcUzWdMjLBowHMwzfe6vCk-FqaZPyPxQ2BOxCEUckzZQ1SkSooFT1T13D9rSA_Ie9p950kT1zcY3MiSrtm2tBZv27te29qKPUq8KVKwLRJdoIDkuUzkI1sWKbRLzEP2f7jOdhSFHZ6-aPfp42_MC_qSC7PXbNf8kd8SBnkz7U6YMPkX1LS0iOguFKDS3Ti55BwdRbWRMedgZflDgzxPNtCSKwDlwNDRE83cWogxIoNbAMWDPqp3c'
+    },
+    {
+      id: 'random_forest',
+      name: 'Random Forest',
+      description: 'An ensemble of decision trees for classification and regression.',
+      image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDSwdzR4PH6hmYErHh5YAQis-yPs3rYLz_ChqOsaDvEqvXUhrXNOuru6Dj-EmTfR_-e8pYK62G0vBadjLM6ASVfZ8qDz8t38iNnAimyYDPl75lUdRBsXFpQ03_iPknmI34oCDGEgPCSSkMi2_CZPVCnDoDTvE4tHD8x9pB5l8kGvBIEYz1oNhM33zuUf6vuu1Gk3O9YyGPrPrYHzAJSlfKNHAQrpzwEUDcPy8rzj8N--atSEtMvvBLcIID-5fVUqlN9zxE5dAn-iGk'
+    },
+    {
+      id: 'svm',
+      name: 'Support Vector Machine',
+      description: 'A powerful model for classification and regression.',
+      image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuA5OkzBuRr5sABjvDhU7amWguOC-tl0RrjGPXOY2wzTajRSGQJny8iyuEqLj4tQ19meuTCCM-7dQjoQKJZ5Ug5s0blVebv5CvRhM_SsGwSCzHxY2b8c2MNBE1-ejSezKpn_rSWoy_qYvqZUykCzP21tDJgNO8ybf3qrBYk7TOXjAZqxUwWbSetX4mUuiF7Tx-7rlDLIBH40-qUuECtRD5dj6KhOXrzCfubCIGPOANU-qQTMny9HaUDJAEo3P5K46hloOgybIySZdBA'
+    },
+    {
+      id: 'knn',
+      name: 'K-Nearest Neighbors',
+      description: 'A simple, non-parametric model for classification and regression.',
+      image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBMdKc85t7mUXtC9QaQHRxcuYl3qC9l5MAapFmdlKXS8xQETSIvNWrCY7QL8Lu1VmqoP3QWPhCIRQVqklbaq5TkkGtUH43_lv8-eoJqMkJZUBbTtyiDrGFTv0RSaDkOJ7EtZN0rVUbE7wy-WeXo1xDP5qbjYbl-Z7kiXrEwuG3vk14JufdBXfU2Z9XtbYvXPEvL-onBa7URUv2UXskE0wO0S_ZaxRAY1u_Y_dC2FmMnS5sc7AmSeFjjQm2a25m7I1Fmsa1eSpCFRyU'
+    }
+  ]
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -31,7 +65,7 @@ export default function Dashboard() {
 
   const handlePreviewConfirm = () => {
     setShowPreview(false)
-    // Here you would typically process the data further
+    setActiveTab('train')
     console.log('Data confirmed, proceeding to training...')
   }
 
@@ -246,79 +280,468 @@ export default function Dashboard() {
             )}
 
             {activeTab === 'train' && (
-              <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
-                <h2 className="text-2xl font-semibold mb-6 flex items-center text-white">
-                  <Play className="w-6 h-6 mr-3 text-green-400" />
-                  Train Your Model
-                </h2>
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-3">
-                        Problem Type
-                      </label>
-                      <select className="w-full p-4 border border-gray-600 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white">
-                        <option>Classification</option>
-                        <option>Regression</option>
-                        <option>Time Series</option>
-                      </select>
+              <div className="flex gap-6">
+                {/* Main Model Selection Panel */}
+                <div className="flex-1">
+                  <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700 mb-6">
+                    <div className="flex justify-between items-start mb-6">
+                      <div>
+                        <h2 className="text-2xl font-semibold flex items-center text-white mb-2">
+                          <Play className="w-6 h-6 mr-3 text-green-400" />
+                          Model Selection & Configuration
+                        </h2>
+                        <p className="text-gray-300 text-sm">
+                          Choose a machine learning model for training. If you're unsure, we'll recommend one based on your dataset.
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-3">
-                        Target Column
-                      </label>
-                      <select className="w-full p-4 border border-gray-600 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white">
-                        <option>Select target column...</option>
-                        <option>price</option>
-                        <option>category</option>
-                        <option>outcome</option>
-                      </select>
+                    
+                    <div className="flex justify-between mb-6">
+                      <button
+                        onClick={() => setActiveTab('upload')}
+                        className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-all font-medium"
+                      >
+                        ← Back to Data Preview
+                      </button>
+                      <button
+                        onClick={handleTrain}
+                        disabled={!selectedModel && !autoMode}
+                        className={`px-6 py-2 rounded-lg font-medium transition-all ${
+                          (!selectedModel && !autoMode)
+                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                            : 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:from-green-700 hover:to-green-800'
+                        }`}
+                      >
+                        Train Model →
+                      </button>
+                    </div>
+
+                    {/* Auto Mode Toggle */}
+                    <div className="bg-gray-700/30 rounded-lg p-4 mb-6 border border-gray-600">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-white font-medium mb-1">Enable Auto Mode</h3>
+                          <p className="text-gray-300 text-sm">
+                            Let the system automatically select the best model and parameters for your dataset.
+                          </p>
+                        </div>
+                        <label className="relative flex h-8 w-14 cursor-pointer items-center rounded-full bg-gray-600 p-1 transition-colors has-[:checked]:bg-green-600">
+                          <div className={`h-6 w-6 rounded-full bg-white transition-transform ${autoMode ? 'translate-x-6' : ''}`}></div>
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={autoMode}
+                            onChange={(e) => setAutoMode(e.target.checked)}
+                          />
+                        </label>
+                      </div>
+                      {autoMode && (
+                        <p className="text-green-300 text-sm mt-2">
+                          Auto mode enabled. Manual configuration is disabled.
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Model Selection Grid */}
+                    {!autoMode && (
+                      <>
+                        <h3 className="text-xl font-semibold text-white mb-4">Select a Model</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                          {models.map((model) => (
+                            <div
+                              key={model.id}
+                              onClick={() => setSelectedModel(model.id)}
+                              className={`cursor-pointer rounded-lg border-2 transition-all p-4 ${
+                                selectedModel === model.id
+                                  ? 'border-green-500 bg-green-900/20'
+                                  : 'border-gray-600 bg-gray-700/30 hover:border-gray-500'
+                              }`}
+                            >
+                              <div
+                                className="w-full aspect-square bg-center bg-no-repeat bg-cover rounded-lg mb-3"
+                                style={{ backgroundImage: `url("${model.image}")` }}
+                              ></div>
+                              <h4 className="text-white font-medium mb-1">{model.name}</h4>
+                              <p className="text-gray-300 text-sm">{model.description}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Model Configuration Panel */}
+                {!autoMode && (
+                  <div className="w-80">
+                    <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                      <h3 className="text-xl font-semibold text-white mb-6">Model Configuration</h3>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Model Type
+                          </label>
+                          <select
+                            value={selectedModel}
+                            onChange={(e) => setSelectedModel(e.target.value)}
+                            className="w-full p-3 border border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white"
+                          >
+                            <option value="">Select model...</option>
+                            {models.map((model) => (
+                              <option key={model.id} value={model.id}>
+                                {model.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {selectedModel === 'random_forest' && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-300 mb-2">
+                                n_estimators
+                              </label>
+                              <input
+                                type="number"
+                                value={modelConfig.n_estimators}
+                                onChange={(e) => setModelConfig({...modelConfig, n_estimators: e.target.value})}
+                                placeholder="100"
+                                className="w-full p-3 border border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white placeholder-gray-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-300 mb-2">
+                                max_depth
+                              </label>
+                              <input
+                                type="number"
+                                value={modelConfig.max_depth}
+                                onChange={(e) => setModelConfig({...modelConfig, max_depth: e.target.value})}
+                                placeholder="None"
+                                className="w-full p-3 border border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white placeholder-gray-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-300 mb-2">
+                                criterion
+                              </label>
+                              <select
+                                value={modelConfig.criterion}
+                                onChange={(e) => setModelConfig({...modelConfig, criterion: e.target.value})}
+                                className="w-full p-3 border border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white"
+                              >
+                                <option value="gini">gini</option>
+                                <option value="entropy">entropy</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="flex justify-end mt-6">
+                        <button
+                          onClick={() => setModelConfig({ n_estimators: '', max_depth: '', criterion: 'gini' })}
+                          className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-all font-medium"
+                        >
+                          Reset to Default
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  
-                  <button
-                    onClick={handleTrain}
-                    disabled={isTraining}
-                    className={`w-full py-4 px-8 rounded-md font-medium transition-all text-lg ${
-                      isTraining
-                        ? 'bg-gray-600 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 shadow-lg'
-                    } text-white`}
-                  >
-                    {isTraining ? (
-                      <span className="flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
-                        Training Model...
-                      </span>
-                    ) : (
-                      'Start Training'
-                    )}
-                  </button>
-                </div>
+                )}
               </div>
             )}
 
             {activeTab === 'evaluate' && (
-              <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
-                <h2 className="text-2xl font-semibold mb-6 flex items-center text-white">
-                  <Target className="w-6 h-6 mr-3 text-purple-400" />
-                  Model Evaluation
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
-                    <h3 className="text-lg font-medium text-white mb-3">Accuracy</h3>
-                    <div className="text-3xl font-bold text-purple-400">94.2%</div>
-                    <p className="text-sm text-gray-300 mt-2">Overall model accuracy</p>
+              <div className="space-y-6">
+                {/* Header Section */}
+                <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                  <div className="flex justify-between items-start mb-6">
+                    <div>
+                      <h2 className="text-2xl font-semibold flex items-center text-white mb-2">
+                        <Target className="w-6 h-6 mr-3 text-purple-400" />
+                        Model Analytics Dashboard
+                      </h2>
+                      <p className="text-gray-300 text-sm">
+                        Explore detailed insights into your trained model's performance and dataset characteristics.
+                      </p>
+                    </div>
                   </div>
-                  <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
-                    <h3 className="text-lg font-medium text-white mb-3">Precision</h3>
-                    <div className="text-3xl font-bold text-blue-400">91.8%</div>
-                    <p className="text-sm text-gray-300 mt-2">Precision score</p>
+                </div>
+
+                {/* Performance Metrics */}
+                <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                  <h3 className="text-xl font-semibold text-white mb-6">Performance Metrics</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                    <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                      <h4 className="text-base font-medium text-white mb-2">Accuracy</h4>
+                      <div className="text-2xl font-bold text-white mb-1">92%</div>
+                      <p className="text-green-400 text-base font-medium">+2%</p>
+                    </div>
+                    <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                      <h4 className="text-base font-medium text-white mb-2">Precision</h4>
+                      <div className="text-2xl font-bold text-white mb-1">88%</div>
+                      <p className="text-red-400 text-base font-medium">-1%</p>
+                    </div>
+                    <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                      <h4 className="text-base font-medium text-white mb-2">Recall</h4>
+                      <div className="text-2xl font-bold text-white mb-1">90%</div>
+                      <p className="text-green-400 text-base font-medium">+3%</p>
+                    </div>
+                    <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                      <h4 className="text-base font-medium text-white mb-2">F1 Score</h4>
+                      <div className="text-2xl font-bold text-white mb-1">89%</div>
+                      <p className="text-green-400 text-base font-medium">+1%</p>
+                    </div>
                   </div>
-                  <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
-                    <h3 className="text-lg font-medium text-white mb-3">Recall</h3>
-                    <div className="text-3xl font-bold text-green-400">89.5%</div>
-                    <p className="text-sm text-gray-300 mt-2">Recall score</p>
+                  
+                  {/* ROC-AUC Score */}
+                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                    <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                      <h4 className="text-base font-medium text-white mb-2">ROC-AUC Score</h4>
+                      <div className="text-2xl font-bold text-white">0.95</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Model Overview */}
+                <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                  <h3 className="text-xl font-semibold text-white mb-6">Model Overview</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
+                    <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
+                      <p className="text-gray-400 text-sm">Model Type</p>
+                      <p className="text-white text-sm">Classification</p>
+                    </div>
+                    <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
+                      <p className="text-gray-400 text-sm">Training Time</p>
+                      <p className="text-white text-sm">2 hours 30 minutes</p>
+                    </div>
+                    <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
+                      <p className="text-gray-400 text-sm">Number of Iterations/Epochs</p>
+                      <p className="text-white text-sm">100 epochs</p>
+                    </div>
+                    <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
+                      <p className="text-gray-400 text-sm">Algorithm Used</p>
+                      <p className="text-white text-sm">Gradient Boosting</p>
+                    </div>
+                    <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
+                      <p className="text-gray-400 text-sm">Dataset Name</p>
+                      <p className="text-white text-sm">Customer Retention Dataset</p>
+                    </div>
+                    <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
+                      <p className="text-gray-400 text-sm">Dataset Size</p>
+                      <p className="text-white text-sm">10,000 rows</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Interactive Charts */}
+                <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl border border-gray-700">
+                  <div className="p-6 pb-0">
+                    <h3 className="text-xl font-semibold text-white mb-6">Interactive Charts</h3>
+                  </div>
+                  
+                  {/* Chart Tabs */}
+                  <div className="border-b border-gray-600">
+                    <div className="flex px-6 gap-8">
+                      <button className="flex flex-col items-center justify-center border-b-2 border-blue-400 text-white pb-3 pt-4">
+                        <span className="text-white text-sm font-bold">ROC Curve</span>
+                      </button>
+                      <button className="flex flex-col items-center justify-center border-b-2 border-transparent text-gray-400 pb-3 pt-4 hover:text-white">
+                        <span className="text-gray-400 text-sm font-bold">Precision-Recall</span>
+                      </button>
+                      <button className="flex flex-col items-center justify-center border-b-2 border-transparent text-gray-400 pb-3 pt-4 hover:text-white">
+                        <span className="text-gray-400 text-sm font-bold">Feature Importance</span>
+                      </button>
+                      <button className="flex flex-col items-center justify-center border-b-2 border-transparent text-gray-400 pb-3 pt-4 hover:text-white">
+                        <span className="text-gray-400 text-sm font-bold">Loss vs Epoch</span>
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Chart Content */}
+                  <div className="p-6">
+                    <div className="bg-gray-700/30 rounded-lg p-6 border border-gray-600">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h4 className="text-white font-medium mb-1">ROC Curve</h4>
+                          <div className="text-2xl font-bold text-white mb-2">0.95</div>
+                          <div className="flex gap-2 items-center">
+                            <span className="text-gray-300 text-sm">Overall</span>
+                            <span className="text-green-400 text-sm font-medium">+2%</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Placeholder Chart */}
+                      <div className="h-48 bg-gray-800/50 rounded-lg border border-gray-600 flex items-center justify-center relative overflow-hidden">
+                        {/* Simple SVG curve simulation */}
+                        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 200">
+                          <defs>
+                            <linearGradient id="rocGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                              <stop offset="0%" stopColor="rgb(59, 130, 246)" stopOpacity="0.3"/>
+                              <stop offset="100%" stopColor="rgb(59, 130, 246)" stopOpacity="0.1"/>
+                            </linearGradient>
+                          </defs>
+                          <path
+                            d="M 20 180 Q 100 160 200 100 T 380 20"
+                            stroke="rgb(59, 130, 246)"
+                            strokeWidth="2"
+                            fill="none"
+                          />
+                          <path
+                            d="M 20 180 Q 100 160 200 100 T 380 20 L 380 180 L 20 180 Z"
+                            fill="url(#rocGradient)"
+                          />
+                        </svg>
+                        <div className="absolute bottom-2 left-0 right-0 flex justify-between px-4 text-xs text-gray-400">
+                          <span>0.0</span>
+                          <span>0.2</span>
+                          <span>0.4</span>
+                          <span>0.6</span>
+                          <span>0.8</span>
+                          <span>1.0</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dataset Summary */}
+                <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                  <h3 className="text-xl font-semibold text-white mb-4">Dataset Summary</h3>
+                  <p className="text-white text-base mb-6">Key insights about the dataset used for training:</p>
+                  
+                  <div className="space-y-4">
+                    <div className="bg-gray-700/30 p-4 rounded-lg border border-gray-600">
+                      <h4 className="text-white font-medium mb-1">Null Values</h4>
+                      <p className="text-gray-300 text-sm">
+                        15% of the dataset contains missing values, primarily in the 'Age' and 'Income' columns.
+                      </p>
+                    </div>
+                    <div className="bg-gray-700/30 p-4 rounded-lg border border-gray-600">
+                      <h4 className="text-white font-medium mb-1">Dominant Class</h4>
+                      <p className="text-gray-300 text-sm">
+                        The 'Retention' class is the dominant class, representing 70% of the dataset.
+                      </p>
+                    </div>
+                    <div className="bg-gray-700/30 p-4 rounded-lg border border-gray-600">
+                      <h4 className="text-white font-medium mb-1">Class Imbalance</h4>
+                      <p className="text-gray-300 text-sm">
+                        The dataset exhibits a moderate class imbalance, with a ratio of approximately 2:1 between the 'Retention' and 'No Retention' classes.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Distribution Charts */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                    <div className="bg-gray-700/30 p-6 rounded-lg border border-gray-600">
+                      <h4 className="text-white font-medium mb-2">Distribution of Categorical Variable A</h4>
+                      <div className="text-2xl font-bold text-white mb-2">60%</div>
+                      <div className="flex gap-2 items-center mb-4">
+                        <span className="text-gray-300 text-sm">Overall</span>
+                        <span className="text-green-400 text-sm font-medium">+5%</span>
+                      </div>
+                      
+                      {/* Bar Chart */}
+                      <div className="h-32 flex items-end justify-center gap-4">
+                        <div className="flex flex-col items-center">
+                          <div className="w-12 bg-blue-500 border-t-2 border-blue-400" style={{height: '60%'}}></div>
+                          <span className="text-xs text-gray-400 mt-2">Category 1</span>
+                        </div>
+                        <div className="flex flex-col items-center">
+                          <div className="w-12 bg-blue-500 border-t-2 border-blue-400" style={{height: '40%'}}></div>
+                          <span className="text-xs text-gray-400 mt-2">Category 2</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-gray-700/30 p-6 rounded-lg border border-gray-600">
+                      <h4 className="text-white font-medium mb-2">Distribution of Categorical Variable B</h4>
+                      <div className="text-2xl font-bold text-white mb-2">40%</div>
+                      <div className="flex gap-2 items-center mb-4">
+                        <span className="text-gray-300 text-sm">Overall</span>
+                        <span className="text-red-400 text-sm font-medium">-5%</span>
+                      </div>
+                      
+                      {/* Bar Chart */}
+                      <div className="h-32 flex items-end justify-center gap-4">
+                        <div className="flex flex-col items-center">
+                          <div className="w-8 bg-purple-500 border-t-2 border-purple-400" style={{height: '80%'}}></div>
+                          <span className="text-xs text-gray-400 mt-2">A</span>
+                        </div>
+                        <div className="flex flex-col items-center">
+                          <div className="w-8 bg-purple-500 border-t-2 border-purple-400" style={{height: '50%'}}></div>
+                          <span className="text-xs text-gray-400 mt-2">B</span>
+                        </div>
+                        <div className="flex flex-col items-center">
+                          <div className="w-8 bg-purple-500 border-t-2 border-purple-400" style={{height: '100%'}}></div>
+                          <span className="text-xs text-gray-400 mt-2">C</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Model Retraining */}
+                <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                  <h3 className="text-xl font-semibold text-white mb-4">Model Retraining (Optional)</h3>
+                  <p className="text-white text-base mb-6">
+                    Recommended improvements: Optimize hyperparameters for better performance.
+                  </p>
+                  
+                  <div className="mb-6">
+                    <button className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-all font-medium">
+                      Retrain with optimized hyperparameters
+                    </button>
+                  </div>
+
+                  {/* Configuration Table */}
+                  <div className="overflow-hidden rounded-lg border border-gray-600">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-gray-700/50">
+                          <th className="px-4 py-3 text-left text-white text-sm font-medium">Configuration</th>
+                          <th className="px-4 py-3 text-left text-white text-sm font-medium">Hyperparameter A</th>
+                          <th className="px-4 py-3 text-left text-white text-sm font-medium">Hyperparameter B</th>
+                          <th className="px-4 py-3 text-left text-white text-sm font-medium">Result</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-t border-gray-600">
+                          <td className="px-4 py-3 text-white text-sm">Config 1</td>
+                          <td className="px-4 py-3 text-gray-300 text-sm">Value 1</td>
+                          <td className="px-4 py-3 text-gray-300 text-sm">Value 2</td>
+                          <td className="px-4 py-3 text-gray-300 text-sm">90%</td>
+                        </tr>
+                        <tr className="border-t border-gray-600">
+                          <td className="px-4 py-3 text-white text-sm">Config 2</td>
+                          <td className="px-4 py-3 text-gray-300 text-sm">Value 3</td>
+                          <td className="px-4 py-3 text-gray-300 text-sm">Value 4</td>
+                          <td className="px-4 py-3 text-gray-300 text-sm">91%</td>
+                        </tr>
+                        <tr className="border-t border-gray-600">
+                          <td className="px-4 py-3 text-white text-sm">Config 3</td>
+                          <td className="px-4 py-3 text-gray-300 text-sm">Value 5</td>
+                          <td className="px-4 py-3 text-gray-300 text-sm">Value 6</td>
+                          <td className="px-4 py-3 text-gray-300 text-sm">92%</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Export & Share */}
+                <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                  <h3 className="text-xl font-semibold text-white mb-6">Export & Share</h3>
+                  <div className="flex gap-4">
+                    <button className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700 transition-all font-medium">
+                      Download PDF Report
+                    </button>
+                    <button className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700 transition-all font-medium">
+                      Share Dashboard
+                    </button>
                   </div>
                 </div>
               </div>
