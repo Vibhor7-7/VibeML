@@ -1,7 +1,7 @@
 """
 SQLAlchemy models and CRUD operations for experiment tracking.
 """
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, JSON, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, JSON, ForeignKey, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from datetime import datetime
@@ -12,10 +12,43 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Database setup
+# Database setup with improved concurrency settings
 db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'vibeml.db'))
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{db_path}")
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
+
+# Create engine with better SQLite configuration for concurrency
+engine = create_engine(
+    DATABASE_URL, 
+    echo=False,
+    pool_pre_ping=True,
+    pool_recycle=300,
+    connect_args={
+        "check_same_thread": False,
+        "timeout": 30,
+        "isolation_level": None  # Use autocommit mode for better concurrency
+    } if "sqlite" in DATABASE_URL else {}
+)
+
+# Enable WAL mode and optimize SQLite for concurrent access
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    """Configure SQLite for better concurrency and performance."""
+    if "sqlite" in DATABASE_URL:
+        cursor = dbapi_connection.cursor()
+        # Enable WAL mode for better concurrency (multiple readers, one writer)
+        cursor.execute("PRAGMA journal_mode=WAL")
+        # Set synchronous mode to NORMAL (faster than FULL, safer than OFF)
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        # Increase cache size (default is 2000 pages, we set to 10000)
+        cursor.execute("PRAGMA cache_size=10000")
+        # Store temporary tables and indices in memory
+        cursor.execute("PRAGMA temp_store=MEMORY")
+        # Set timeout for busy database (30 seconds)
+        cursor.execute("PRAGMA busy_timeout=30000")
+        # Optimize for mixed read/write workloads
+        cursor.execute("PRAGMA wal_autocheckpoint=1000")
+        cursor.close()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

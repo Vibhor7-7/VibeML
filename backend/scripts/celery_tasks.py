@@ -19,46 +19,79 @@ logger = logging.getLogger(__name__)
 
 
 def safe_update_status(run_id, status, error_message=None):
-    """Safely update run status with error handling to prevent MemoryError crashes."""
+    """Safely update run status with error handling and retry logic to prevent MemoryError crashes."""
     if not run_id:
         return
     
-    try:
-        # Create a fresh database session for each update
-        db = SessionLocal()
-        exp_store = ExperimentStore(db)
-        exp_store.update_run_status(run_id, status, error_message)
-        db.close()
-        logger.info(f"Successfully updated run {run_id} status to {status}")
-    except Exception as e:
-        logger.error(f"Failed to update status for run {run_id}: {e}")
-        # Don't raise - continue execution even if DB update fails
+    max_retries = 3
+    for attempt in range(max_retries):
+        session = None
+        try:
+            # Create a fresh database session for each update
+            session = SessionLocal()
+            exp_store = ExperimentStore(session)
+            exp_store.update_run_status(run_id, status, error_message)
+            session.commit()
+            session.close()
+            logger.info(f"Successfully updated run {run_id} status to {status}")
+            return
+        except Exception as e:
+            if session:
+                session.rollback()
+                session.close()
+            
+            logger.warning(f"Attempt {attempt + 1} failed to update status for run {run_id}: {e}")
+            
+            if attempt == max_retries - 1:
+                logger.error(f"Failed to update status for run {run_id} after {max_retries} attempts: {e}")
+                return  # Don't raise - continue execution even if DB update fails
+            
+            # Exponential backoff
+            import time
+            time.sleep(0.1 * (2 ** attempt))
 
 
 def safe_update_metrics(run_id, training_results):
-    """Safely update run metrics with error handling."""
+    """Safely update run metrics with error handling and retry logic."""
     if not run_id:
         return
     
-    try:
-        db = SessionLocal()
-        exp_store = ExperimentStore(db)
-        exp_store.update_run_metrics(
-            run_id,
-            training_metrics=training_results.get('best_test_metrics', {}),
-            validation_metrics={'cv_score': training_results.get('best_cv_score', 0)},
-            test_metrics=training_results.get('best_test_metrics', {})
-        )
-        exp_store.update_run_model_info(
-            run_id,
-            model_path=training_results.get('model_path'),
-            training_duration_seconds=training_results.get('training_duration_seconds'),
-            model_size_bytes=None
-        )
-        db.close()
-        logger.info(f"Successfully updated metrics for run {run_id}")
-    except Exception as e:
-        logger.error(f"Failed to update metrics for run {run_id}: {e}")
+    max_retries = 3
+    for attempt in range(max_retries):
+        session = None
+        try:
+            session = SessionLocal()
+            exp_store = ExperimentStore(session)
+            exp_store.update_run_metrics(
+                run_id,
+                training_metrics=training_results.get('best_test_metrics', {}),
+                validation_metrics={'cv_score': training_results.get('best_cv_score', 0)},
+                test_metrics=training_results.get('best_test_metrics', {})
+            )
+            exp_store.update_run_model_info(
+                run_id,
+                model_path=training_results.get('model_path'),
+                training_duration_seconds=training_results.get('training_duration_seconds'),
+                model_size_bytes=None
+            )
+            session.commit()
+            session.close()
+            logger.info(f"Successfully updated metrics for run {run_id}")
+            return
+        except Exception as e:
+            if session:
+                session.rollback()
+                session.close()
+            
+            logger.warning(f"Attempt {attempt + 1} failed to update metrics for run {run_id}: {e}")
+            
+            if attempt == max_retries - 1:
+                logger.error(f"Failed to update metrics for run {run_id} after {max_retries} attempts: {e}")
+                return  # Don't raise - continue execution
+            
+            # Exponential backoff
+            import time
+            time.sleep(0.1 * (2 ** attempt))
 
 
 @celery_app.task(bind=True)
