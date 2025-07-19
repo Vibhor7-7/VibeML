@@ -41,6 +41,6 @@ if __name__ == '__main__':
     celery_app.worker_main([
         'worker',
         '--loglevel=info',
-        '--concurrency=2',
+        '--concurrency=1',
         '--pool=prefork'
     ])

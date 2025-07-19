@@ -32,10 +32,7 @@ celery_app.conf.update(
     timezone='UTC',
     enable_utc=True,
     result_expires=3600,  # Results expire after 1 hour
-    task_routes={
-        'scripts.celery_tasks.train_model_task': {'queue': 'training'},
-        'scripts.celery_tasks.predict_task': {'queue': 'prediction'},
-    },
+    # Removed task_routes to use default queue
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     worker_max_tasks_per_child=1000,
