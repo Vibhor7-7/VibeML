@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import routers
-from routers import train, predict, export, data_import
+from routers import train, predict, export, data_import, datasets
 from models.experiment_store import get_db, engine, Base
 
 # Configure logging
@@ -103,7 +103,8 @@ async def root():
             "training": "/train",
             "data_import": "/import", 
             "prediction": "/predict",
-            "export": "/export"
+            "export": "/export",
+            "datasets": "/datasets"
         }
     }
 
@@ -141,6 +142,7 @@ app.include_router(train.router, prefix="/api")
 app.include_router(data_import.router, prefix="/api")
 app.include_router(predict.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
+app.include_router(datasets.router)
 
 
 # Global exception handler

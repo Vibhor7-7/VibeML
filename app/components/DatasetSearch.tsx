@@ -30,15 +30,19 @@ export default function DatasetSearch({ onDatasetSelect, selectedDataset }: Data
 
     setLoading(true)
     try {
+      // Add full URL to ensure it reaches the backend
       const response = await fetch(
-        `/api/datasets/search?query=${encodeURIComponent(query)}&source=${source}&limit=20`
+        `http://localhost:8000/api/datasets/search?query=${encodeURIComponent(query)}&source=${source}&max_results=20`
       )
       
       if (response.ok) {
         const data = await response.json()
+        console.log('Search results:', data)
         setDatasets(data.datasets || [])
       } else {
-        console.error('Failed to search datasets')
+        console.error('Search failed with status:', response.status)
+        const errorText = await response.text()
+        console.error('Error details:', errorText)
         // Show mock data for demo
         setDatasets([
           {
@@ -71,7 +75,19 @@ export default function DatasetSearch({ onDatasetSelect, selectedDataset }: Data
         ])
       }
     } catch (error) {
-      console.error('Search error:', error)
+      console.error('Network error connecting to backend:', error)
+      // Show mock data as fallback when backend is unreachable
+      setDatasets([
+        {
+          id: 'mock_error',
+          name: 'Backend Connection Failed',
+          description: 'Unable to connect to the search service. Please check if the backend is running.',
+          source: 'local',
+          size: 0,
+          features: 0,
+          target_column: 'N/A'
+        }
+      ])
     } finally {
       setLoading(false)
     }
