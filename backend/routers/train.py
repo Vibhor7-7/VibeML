@@ -116,6 +116,7 @@ async def get_training_status(job_id: str, db: Session = Depends(get_db)):
                 elif task_state == 'SUCCESS':
                     progress_percentage = 100.0
                     current_step = "Completed"
+                    # Don't continue polling once completed
                 elif task_state == 'FAILURE':
                     progress_percentage = 0.0
                     current_step = "Failed"

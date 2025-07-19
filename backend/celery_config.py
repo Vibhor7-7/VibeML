@@ -35,7 +35,8 @@ celery_app.conf.update(
     # Removed task_routes to use default queue
     worker_prefetch_multiplier=1,
     task_acks_late=True,
-    worker_max_tasks_per_child=1000,
+    worker_max_tasks_per_child=1,  # Restart worker after each task to prevent memory issues
+    task_reject_on_worker_lost=True,  # Reject tasks if worker crashes
 )
 
 # Task annotations for better monitoring

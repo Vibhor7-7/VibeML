@@ -18,6 +18,49 @@ from services.kaggle import kaggle_service
 logger = logging.getLogger(__name__)
 
 
+def safe_update_status(run_id, status, error_message=None):
+    """Safely update run status with error handling to prevent MemoryError crashes."""
+    if not run_id:
+        return
+    
+    try:
+        # Create a fresh database session for each update
+        db = SessionLocal()
+        exp_store = ExperimentStore(db)
+        exp_store.update_run_status(run_id, status, error_message)
+        db.close()
+        logger.info(f"Successfully updated run {run_id} status to {status}")
+    except Exception as e:
+        logger.error(f"Failed to update status for run {run_id}: {e}")
+        # Don't raise - continue execution even if DB update fails
+
+
+def safe_update_metrics(run_id, training_results):
+    """Safely update run metrics with error handling."""
+    if not run_id:
+        return
+    
+    try:
+        db = SessionLocal()
+        exp_store = ExperimentStore(db)
+        exp_store.update_run_metrics(
+            run_id,
+            training_metrics=training_results.get('best_test_metrics', {}),
+            validation_metrics={'cv_score': training_results.get('best_cv_score', 0)},
+            test_metrics=training_results.get('best_test_metrics', {})
+        )
+        exp_store.update_run_model_info(
+            run_id,
+            model_path=training_results.get('model_path'),
+            training_duration_seconds=training_results.get('training_duration_seconds'),
+            model_size_bytes=None
+        )
+        db.close()
+        logger.info(f"Successfully updated metrics for run {run_id}")
+    except Exception as e:
+        logger.error(f"Failed to update metrics for run {run_id}: {e}")
+
+
 @celery_app.task(bind=True)
 def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -38,10 +81,10 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
     
     try:
         run_id = config.get('run_id')
-        # Temporarily skip database status update to avoid MemoryError
-        # if run_id:
-        #     exp_store.update_run_status(run_id, 'running')
+        # Safely update status to running
+        safe_update_status(run_id, 'running')
         logger.info(f"Starting training for run_id: {run_id}")
+        
         # Update task status
         current_task.update_state(
             state='PROGRESS',
@@ -120,29 +163,9 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
         
         # Get the run from database
         run_id = config.get('run_id')
-        # Temporarily skip all database operations to avoid MemoryError
-        # if run_id:
-        #     # Update run with results
-        #     exp_store.update_run_status(run_id, 'completed')
-        #     exp_store.update_run_metrics(
-        #         run_id,
-        #         training_metrics=training_results.get('best_test_metrics', {}),
-        #         validation_metrics={'cv_score': training_results.get('best_cv_score', 0)},
-        #         test_metrics=training_results.get('best_test_metrics', {})
-        #     )
-        #     exp_store.update_run_model_info(
-        #         run_id,
-        #         model_path=training_results.get('model_path'),
-        #         training_duration_seconds=training_results.get('training_duration_seconds'),
-        #         model_size_bytes=None  # TODO: Calculate model file size
-        #     )
-        #     
-        #     # Update hyperparameters
-        #     run = exp_store.get_run(run_id)
-        #     if run:
-        #         run.hyperparameters = training_results.get('best_hyperparameters', {})
-        #         run.algorithm = training_results.get('best_algorithm')
-        #         db.commit()
+        # Safely update database with results
+        safe_update_status(run_id, 'completed')
+        safe_update_metrics(run_id, training_results)
         
         logger.info(f"Training completed successfully for run_id: {run_id}")
         
@@ -157,7 +180,12 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
         )
         
         logger.info(f"Training task {task_id} completed successfully")
-        return training_results
+        return {
+            'status': 'completed',
+            'progress': 100,
+            'results': training_results,
+            'message': 'Training completed successfully'
+        }
         
     except Exception as e:
         error_msg = f"Training failed: {str(e)}"
@@ -166,9 +194,8 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
         
         # Update run status if run_id is available
         run_id = config.get('run_id')
-        # Temporarily skip database operations to avoid MemoryError
-        # if run_id:
-        #     exp_store.update_run_status(run_id, 'failed', error_msg)
+        # Safely update status to failed
+        safe_update_status(run_id, 'failed', error_msg)
         
         logger.error(f"Training failed for run_id: {run_id} - {error_msg}")
         

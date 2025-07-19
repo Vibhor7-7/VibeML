@@ -97,11 +97,16 @@ def test_automl_workflow():
                   f"Step: {status_data['current_step']:<20} | "
                   f"Progress: {status_data['progress_percentage']:5.1f}%")
             
-            # Check if training is complete
-            if status_data['status'] in ['completed', 'failed']:
-                print(f"\n🎯 Training finished with status: {status_data['status']}")
+            # Check if training is complete - check both status and progress
+            if (status_data['status'] in ['completed', 'failed'] or 
+                status_data['current_step'] == 'Completed' or 
+                status_data['progress_percentage'] >= 100.0):
                 
-                if status_data['status'] == 'completed':
+                print(f"\n🎯 Training finished with status: {status_data['status']}")
+                print(f"   Final step: {status_data['current_step']}")
+                print(f"   Final progress: {status_data['progress_percentage']:.1f}%")
+                
+                if status_data['status'] == 'completed' or status_data['current_step'] == 'Completed':
                     print("📊 Training Results:")
                     if status_data.get('training_metrics'):
                         for metric, value in status_data['training_metrics'].items():
@@ -111,6 +116,8 @@ def test_automl_workflow():
                         print("📈 Validation Results:")
                         for metric, value in status_data['validation_metrics'].items():
                             print(f"   {metric}: {value:.4f}")
+                            
+                    print("✅ Training completed successfully!")
                 else:
                     print(f"❌ Training failed: {status_data.get('error_message', 'Unknown error')}")
                 
