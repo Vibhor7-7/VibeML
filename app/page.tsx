@@ -19,6 +19,9 @@ export default function Dashboard() {
   const [autoMode, setAutoMode] = useState(false)
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [selectedDataset, setSelectedDataset] = useState<any>(null)
+  const [targetColumn, setTargetColumn] = useState('')
+  const [problemType, setProblemType] = useState('classification')
+  const [datasetColumns, setDatasetColumns] = useState<string[]>([])
   const [modelConfig, setModelConfig] = useState({
     n_estimators: '',
     max_depth: '',
@@ -54,17 +57,42 @@ export default function Dashboard() {
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
+    console.log('File uploaded:', file?.name, 'Type:', file?.type)
     if (file && file.type === 'text/csv') {
       setUploadedFile(file)
-      // Simulate CSV parsing and show preview
-      const mockData = Array.from({ length: 10 }, (_, i) => ({
-        field1: `Value ${i * 5 + 1}`,
-        field2: `Value ${i * 5 + 2}`,
-        field3: `Value ${i * 5 + 3}`,
-        field4: `Value ${i * 5 + 4}`,
-        field5: `Value ${i * 5 + 5}`,
-      }))
-      setPreviewData(mockData)
+      setSelectedDataset(null) // Clear selected dataset when uploading a file
+      setTargetColumn('') // Reset target column when switching datasets
+      
+      // Parse CSV to extract column names and data
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const text = e.target?.result as string
+        console.log('File content preview:', text.substring(0, 200))
+        const lines = text.split('\n').filter(line => line.trim()) // Remove empty lines
+        
+        if (lines.length > 0) {
+          const headers = lines[0].split(',').map(col => col.trim().replace(/"/g, ''))
+          console.log('CSV columns extracted:', headers)
+          setDatasetColumns(headers)
+          setTargetColumn('') // Reset target column when new file is uploaded
+          
+          // Parse the actual data rows
+          const dataRows = lines.slice(1, Math.min(11, lines.length)) // Take up to 10 data rows
+          const parsedData = dataRows.map((line, index) => {
+            const values = line.split(',').map(val => val.trim().replace(/"/g, ''))
+            const rowData: any = { _rowIndex: index }
+            headers.forEach((header, colIndex) => {
+              rowData[header] = values[colIndex] || ''
+            })
+            return rowData
+          })
+          
+          console.log('Parsed CSV data:', parsedData)
+          setPreviewData(parsedData)
+        }
+      }
+      reader.readAsText(file)
+      
       setShowPreview(true)
     }
   }
@@ -77,23 +105,207 @@ export default function Dashboard() {
 
   const handleReupload = () => {
     setUploadedFile(null)
+    setSelectedDataset(null) // Clear selected dataset when reuploading
     setShowPreview(false)
     setPreviewData([])
+    setDatasetColumns([]) // Clear columns
+    setTargetColumn('') // Clear target column
   }
 
-  const handleTrain = () => {
-    setIsTraining(true)
-    setLogs(['Starting model training...', 'Loading dataset...', 'Preprocessing data...'])
+  const fetchDatasetColumns = async (dataset: any) => {
+    try {
+      console.log('Fetching columns for dataset:', dataset)
+      
+      // For external datasets, ensure proper encoding of dataset name
+      const encodedDatasetName = encodeURIComponent(dataset.name)
+      
+      // Fetch dataset info from backend
+      const response = await fetch(
+        `http://localhost:8000/api/datasets/preview/${dataset.source}/${encodedDatasetName}?max_rows=5`
+      )
+      
+      if (response.ok) {
+        const previewInfo = await response.json()
+        console.log('Dataset preview info:', previewInfo)
+        
+        // Also update preview data if available
+        if (previewInfo.sample_data && previewInfo.sample_data.length > 0) {
+          setPreviewData(previewInfo.sample_data)
+        }
+        
+        // Set potential target columns
+        if (previewInfo.potential_target_columns && previewInfo.potential_target_columns.length > 0) {
+          setTargetColumn(previewInfo.potential_target_columns[0])
+        }
+        
+        return previewInfo.columns
+      } else {
+        const errorText = await response.text()
+        console.error('Failed to fetch dataset columns:', errorText)
+        
+        // For external datasets that fail to preview, try to use known good columns
+        if (dataset.source === 'openml' && dataset.name === '61') {
+          // Known OpenML Iris dataset columns
+          return ['sepallength', 'sepalwidth', 'petallength', 'petalwidth', 'class']
+        }
+        
+        // Default fallback
+        return ['feature1', 'feature2', 'feature3', 'target']
+      }
+    } catch (error) {
+      console.error('Error fetching dataset columns:', error)
+      
+      // For external datasets that fail to preview, try to use known good columns
+      if (dataset.source === 'openml' && dataset.name === '61') {
+        // Known OpenML Iris dataset columns
+        return ['sepallength', 'sepalwidth', 'petallength', 'petalwidth', 'class']
+      }
+      
+      return ['feature1', 'feature2', 'feature3', 'target']
+    }
+  }
+
+  const handleDatasetSelect = async (dataset: any) => {
+    console.log('Dataset selected:', dataset)
+    setSelectedDataset(dataset)
+    setUploadedFile(null) // Clear uploaded file when selecting a dataset
+    setTargetColumn('') // Reset target column when switching datasets
     
-    // Simulate training logs
-    setTimeout(() => {
-      setLogs(prev => [...prev, 'Training model...', 'Evaluating performance...'])
-    }, 2000)
+    // Fetch actual column information
+    const columns = await fetchDatasetColumns(dataset)
+    console.log('Fetched columns:', columns)
+    setDatasetColumns(columns)
+  }
+
+  const handleTestExternalDataset = async () => {
+    // Add a test OpenML Iris dataset that we know works
+    const testDataset = {
+      id: 61,
+      name: '61',
+      source: 'openml',
+      title: 'OpenML Iris Dataset (Test)',
+      description: 'Classic iris dataset for testing external dataset functionality'
+    }
     
-    setTimeout(() => {
-      setLogs(prev => [...prev, 'Training complete!', 'Model accuracy: 94.2%'])
+    console.log('Loading test external dataset...')
+    await handleDatasetSelect(testDataset)
+  }
+
+  const handleTrain = async () => {
+    try {
+      setIsTraining(true)
+      setLogs(['Preparing training configuration...'])
+      
+      // Validate required fields
+      if (!targetColumn) {
+        throw new Error('Please select a target column')
+      }
+      
+      // Handle different dataset sources
+      let datasetId = 'unknown'
+      let datasetSource = 'upload'
+      
+      if (selectedDataset) {
+        // For selected datasets from search, use the dataset info
+        datasetSource = selectedDataset.source
+        datasetId = selectedDataset.name || selectedDataset.id || 'unknown'
+        
+        // For OpenML datasets, ensure we have just the numeric ID
+        if (datasetSource === 'openml' && datasetId.startsWith('openml_')) {
+          datasetId = datasetId.replace('openml_', '')
+        }
+        
+        setLogs(prev => [...prev, `Using ${datasetSource} dataset: ${datasetId}`])
+        
+        // Pre-download the dataset to verify it exists and get info
+        try {
+          const downloadResponse = await fetch(
+            `http://localhost:8000/api/datasets/download/${datasetSource}/${encodeURIComponent(datasetId)}`,
+            { method: 'GET' }
+          )
+          
+          if (!downloadResponse.ok) {
+            throw new Error('Failed to prepare dataset for training')
+          }
+          
+          const downloadResult = await downloadResponse.json()
+          console.log('Dataset prepared:', downloadResult)
+          setLogs(prev => [...prev, `Dataset prepared: ${downloadResult.shape[0]} rows, ${downloadResult.shape[1]} columns`])
+          
+        } catch (error) {
+          console.error('Dataset preparation error:', error)
+          throw new Error(`Failed to prepare dataset: ${error.message}`)
+        }
+        
+      } else if (uploadedFile) {
+        // Handle file upload
+        setLogs(prev => [...prev, 'Uploading dataset...'])
+        
+        const formData = new FormData()
+        formData.append('file', uploadedFile)
+        formData.append('name', uploadedFile.name.split('.')[0])
+        formData.append('target_column', targetColumn)
+        
+        const uploadResponse = await fetch('http://localhost:8000/api/import/upload', {
+          method: 'POST',
+          body: formData
+        })
+        
+        if (!uploadResponse.ok) {
+          const errorData = await uploadResponse.json()
+          throw new Error(errorData.detail || 'Failed to upload dataset')
+        }
+        
+        const uploadResult = await uploadResponse.json()
+        datasetId = uploadResult.dataset_id
+        datasetSource = 'upload'
+        setLogs(prev => [...prev, `Dataset uploaded with ID: ${datasetId}`])
+      } else {
+        throw new Error('No dataset selected or uploaded')
+      }
+      
+      // Prepare training configuration
+      const trainingConfig = {
+        model_name: `model_${Date.now()}`,
+        dataset_id: datasetId,
+        dataset_source: datasetSource,
+        target_column: targetColumn,
+        problem_type: problemType,
+        algorithm: autoMode ? 'auto' : selectedModel,
+        test_size: 0.2,
+        auto_hyperparameter_tuning: autoMode,
+        hyperparameters: selectedModel === 'random_forest' ? {
+          n_estimators: modelConfig.n_estimators ? parseInt(modelConfig.n_estimators) : 100,
+          max_depth: modelConfig.max_depth ? parseInt(modelConfig.max_depth) : null
+        } : {}
+      }
+      
+      setLogs(prev => [...prev, 'Starting training job...'])
+      console.log('Training config:', trainingConfig)
+      
+      // Start training job
+      const response = await fetch('http://localhost:8000/api/train/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(trainingConfig)
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || 'Training failed to start')
+      }
+      
+      const result = await response.json()
+      setCurrentJobId(result.job.job_id)
+      setLogs(prev => [...prev, `Training job started with ID: ${result.job.job_id}`])
+      
+    } catch (error) {
+      console.error('Training error:', error)
+      setLogs(prev => [...prev, `Error: ${error.message}`])
       setIsTraining(false)
-    }, 4000)
+    }
   }
 
   const navItems = [
@@ -229,13 +441,21 @@ export default function Dashboard() {
           <div className="max-w-6xl mx-auto">
             {activeTab === 'search' && (
               <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
-                <h2 className="text-2xl font-semibold mb-6 flex items-center text-white">
-                  <Search className="w-6 h-6 mr-3 text-purple-400" />
-                  Search Datasets
-                </h2>
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-semibold flex items-center text-white">
+                    <Search className="w-6 h-6 mr-3 text-purple-400" />
+                    Search Datasets
+                  </h2>
+                  <button
+                    onClick={handleTestExternalDataset}
+                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-all font-medium text-sm"
+                  >
+                    Test OpenML Iris
+                  </button>
+                </div>
                 <DatasetSearch
                   onDatasetSelect={(dataset) => {
-                    setSelectedDataset(dataset)
+                    handleDatasetSelect(dataset)
                     setActiveTab('train')
                   }}
                 />
@@ -299,21 +519,21 @@ export default function Dashboard() {
                         <table className="w-full">
                           <thead>
                             <tr className="bg-gray-700/50">
-                              <th className="px-4 py-3 text-left text-white text-sm font-medium">Field 1</th>
-                              <th className="px-4 py-3 text-left text-white text-sm font-medium">Field 2</th>
-                              <th className="px-4 py-3 text-left text-white text-sm font-medium">Field 3</th>
-                              <th className="px-4 py-3 text-left text-white text-sm font-medium">Field 4</th>
-                              <th className="px-4 py-3 text-left text-white text-sm font-medium">Field 5</th>
+                              {datasetColumns.map((column, index) => (
+                                <th key={index} className="px-4 py-3 text-left text-white text-sm font-medium">
+                                  {column}
+                                </th>
+                              ))}
                             </tr>
                           </thead>
                           <tbody>
                             {previewData.map((row, index) => (
                               <tr key={index} className="border-t border-gray-600">
-                                <td className="px-4 py-3 text-white text-sm">{row.field1}</td>
-                                <td className="px-4 py-3 text-gray-300 text-sm">{row.field2}</td>
-                                <td className="px-4 py-3 text-gray-300 text-sm">{row.field3}</td>
-                                <td className="px-4 py-3 text-gray-300 text-sm">{row.field4}</td>
-                                <td className="px-4 py-3 text-gray-300 text-sm">{row.field5}</td>
+                                {datasetColumns.map((column, colIndex) => (
+                                  <td key={colIndex} className="px-4 py-3 text-gray-300 text-sm">
+                                    {row[column] || ''}
+                                  </td>
+                                ))}
                               </tr>
                             ))}
                           </tbody>
@@ -322,7 +542,7 @@ export default function Dashboard() {
                     </div>
                     
                     <p className="text-blue-400 text-sm mb-6 px-4">
-                      10 of {previewData.length} rows shown
+                      {previewData.length} of {previewData.length} rows shown
                     </p>
                     
                     {/* Action Buttons */}
@@ -445,6 +665,55 @@ export default function Dashboard() {
                         </div>
                       </div>
 
+                      {/* Dataset Configuration */}
+                      <div className="space-y-4 mb-6">
+                        {/* Debug info */}
+                        <div className="text-xs text-gray-500 bg-gray-800 p-2 rounded">
+                          Debug - Dataset Columns: {JSON.stringify(datasetColumns)}
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Target Column *
+                          </label>
+                          <select
+                            value={targetColumn}
+                            onChange={(e) => setTargetColumn(e.target.value)}
+                            className="w-full p-3 border border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white"
+                          >
+                            <option value="">Select target column...</option>
+                            {datasetColumns.map((column) => {
+                              console.log('Rendering column option:', column)
+                              return (
+                                <option key={column} value={column}>
+                                  {column}
+                                </option>
+                              )
+                            })}
+                          </select>
+                          <p className="text-gray-400 text-xs mt-1">
+                            The column you want to predict
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Problem Type
+                          </label>
+                          <select
+                            value={problemType}
+                            onChange={(e) => setProblemType(e.target.value)}
+                            className="w-full p-3 border border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white"
+                          >
+                            <option value="classification">Classification</option>
+                            <option value="regression">Regression</option>
+                          </select>
+                          <p className="text-gray-400 text-xs mt-1">
+                            Type of machine learning problem
+                          </p>
+                        </div>
+                      </div>
+
                       {/* Model Selection */}
                       {!autoMode && (
                         <div className="space-y-4">
@@ -501,9 +770,9 @@ export default function Dashboard() {
                       <div className="mt-6">
                         <button
                           onClick={handleTrain}
-                          disabled={!selectedModel && !autoMode}
+                          disabled={(!selectedModel && !autoMode) || !targetColumn}
                           className={`w-full px-6 py-3 rounded-lg font-medium transition-all ${
-                            (!selectedModel && !autoMode) || isTraining
+                            ((!selectedModel && !autoMode) || !targetColumn) || isTraining
                               ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
                               : 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:from-green-700 hover:to-green-800'
                           }`}

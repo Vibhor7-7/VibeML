@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VibeML Dataset Search Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .search-form {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        input, select, button {
+            padding: 8px 12px;
+            margin-right: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #0066ff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0052cc;
+        }
+        .results {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+        }
+        .dataset-card {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 16px;
+            position: relative;
+        }
+        .badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: #f0f0f0;
+            color: #333;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+        .preview-container {
+            margin-top: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .actions {
+            margin-top: 10px;
+            display: flex;
+            justify-content: flex-end;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 100;
+            overflow: auto;
+        }
+        .modal-content {
+            background: white;
+            margin: 50px auto;
+            padding: 20px;
+            width: 80%;
+            max-width: 800px;
+            border-radius: 8px;
+        }
+        .close {
+            float: right;
+            font-size: 24px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>VibeML Dataset Search</h1>
+        
+        <div class="search-form">
+            <input type="text" id="search-query" placeholder="Search for datasets..." value="test">
+            <select id="source-select">
+                <option value="all">All Sources</option>
+                <option value="local">Local</option>
+                <option value="kaggle">Kaggle</option>
+                <option value="openml">OpenML</option>
+            </select>
+            <button id="search-button">Search</button>
+        </div>
+        
+        <div id="results-container" class="results">
+            <p>Search for datasets to begin...</p>
+        </div>
+    </div>
+    
+    <div id="preview-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="close-modal">&times;</span>
+            <h2 id="preview-title">Dataset Preview</h2>
+            
+            <div id="preview-container" class="preview-container">
+                <div id="preview-stats"></div>
+                <div id="preview-table"></div>
+            </div>
+            
+            <div class="actions">
+                <button id="select-dataset">Select Dataset</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Elements
+            const searchQuery = document.getElementById('search-query');
+            const sourceSelect = document.getElementById('source-select');
+            const searchButton = document.getElementById('search-button');
+            const resultsContainer = document.getElementById('results-container');
+            const previewModal = document.getElementById('preview-modal');
+            const previewTitle = document.getElementById('preview-title');
+            const previewStats = document.getElementById('preview-stats');
+            const previewTable = document.getElementById('preview-table');
+            const closeModal = document.getElementById('close-modal');
+            const selectDatasetBtn = document.getElementById('select-dataset');
+            
+            let selectedDataset = null;
+            
+            // Event listeners
+            searchButton.addEventListener('click', searchDatasets);
+            closeModal.addEventListener('click', () => previewModal.style.display = 'none');
+            selectDatasetBtn.addEventListener('click', selectDataset);
+            
+            // Initial search
+            searchDatasets();
+            
+            function searchDatasets() {
+                const query = searchQuery.value.trim();
+                const source = sourceSelect.value;
+                
+                resultsContainer.innerHTML = '<p>Searching...</p>';
+                
+                fetch(`http://localhost:8000/api/datasets/search?query=${encodeURIComponent(query)}&source=${source}&max_results=20`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Search failed with status: ' + response.status);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.datasets && data.datasets.length > 0) {
+                            displayResults(data.datasets);
+                        } else {
+                            resultsContainer.innerHTML = '<p>No datasets found matching your query.</p>';
+                        }
+                        console.log('Search results:', data);
+                    })
+                    .catch(error => {
+                        resultsContainer.innerHTML = `<p>Error: ${error.message}</p>`;
+                        console.error('Search error:', error);
+                    });
+            }
+            
+            function displayResults(datasets) {
+                resultsContainer.innerHTML = '';
+                
+                datasets.forEach(dataset => {
+                    const card = document.createElement('div');
+                    card.className = 'dataset-card';
+                    
+                    // Source badge
+                    const badge = document.createElement('span');
+                    badge.className = 'badge';
+                    badge.textContent = dataset.source;
+                    card.appendChild(badge);
+                    
+                    // Dataset title
+                    const title = document.createElement('h3');
+                    title.textContent = dataset.title || dataset.name;
+                    card.appendChild(title);
+                    
+                    // Dataset description
+                    if (dataset.description) {
+                        const description = document.createElement('p');
+                        description.textContent = dataset.description.substring(0, 100) + (dataset.description.length > 100 ? '...' : '');
+                        card.appendChild(description);
+                    }
+                    
+                    // Preview button
+                    const previewBtn = document.createElement('button');
+                    previewBtn.textContent = 'Preview';
+                    previewBtn.addEventListener('click', () => showPreview(dataset));
+                    
+                    const actions = document.createElement('div');
+                    actions.className = 'actions';
+                    actions.appendChild(previewBtn);
+                    card.appendChild(actions);
+                    
+                    resultsContainer.appendChild(card);
+                });
+            }
+            
+            function showPreview(dataset) {
+                previewTitle.textContent = `Preview: ${dataset.title || dataset.name}`;
+                previewStats.innerHTML = 'Loading preview...';
+                previewTable.innerHTML = '';
+                previewModal.style.display = 'block';
+                selectedDataset = dataset;
+                
+                fetch(`http://localhost:8000/api/datasets/preview/${dataset.source}/${encodeURIComponent(dataset.name)}?max_rows=10`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Preview failed with status: ' + response.status);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('Preview data:', data);
+                        displayPreview(data);
+                    })
+                    .catch(error => {
+                        previewStats.innerHTML = `<p>Error loading preview: ${error.message}</p>`;
+                        console.error('Preview error:', error);
+                    });
+            }
+            
+            function displayPreview(data) {
+                // Display statistics
+                const stats = data.statistics || {};
+                previewStats.innerHTML = `
+                    <p><strong>Total rows:</strong> ${stats.total_rows || 'Unknown'}</p>
+                    <p><strong>Total columns:</strong> ${stats.total_columns || data.columns?.length || 'Unknown'}</p>
+                    <p><strong>Potential target columns:</strong> ${data.potential_target_columns?.join(', ') || 'None detected'}</p>
+                `;
+                
+                // Create table
+                if (data.columns && data.sample_data) {
+                    const table = document.createElement('table');
+                    
+                    // Header row
+                    const thead = document.createElement('thead');
+                    const headerRow = document.createElement('tr');
+                    
+                    data.columns.forEach(column => {
+                        const th = document.createElement('th');
+                        th.textContent = column;
+                        headerRow.appendChild(th);
+                    });
+                    
+                    thead.appendChild(headerRow);
+                    table.appendChild(thead);
+                    
+                    // Data rows
+                    const tbody = document.createElement('tbody');
+                    
+                    data.sample_data.forEach(row => {
+                        const tr = document.createElement('tr');
+                        
+                        data.columns.forEach(column => {
+                            const td = document.createElement('td');
+                            td.textContent = row[column] !== undefined ? String(row[column]) : '';
+                            tr.appendChild(td);
+                        });
+                        
+                        tbody.appendChild(tr);
+                    });
+                    
+                    table.appendChild(tbody);
+                    previewTable.innerHTML = '';
+                    previewTable.appendChild(table);
+                } else {
+                    previewTable.innerHTML = '<p>No preview data available.</p>';
+                }
+            }
+            
+            function selectDataset() {
+                if (selectedDataset) {
+                    alert(`Selected dataset: ${selectedDataset.title || selectedDataset.name}`);
+                    previewModal.style.display = 'none';
+                }
+            }
+        });
+    </script>
+</body>
+</html>

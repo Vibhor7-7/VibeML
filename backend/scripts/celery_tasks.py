@@ -130,20 +130,71 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
         
         if dataset_source == 'openml':
             # Extract OpenML dataset ID from dataset_id
-            openml_id = int(dataset_id.replace('openml_', ''))
-            df = openml_service.get_dataset(openml_id)
-            logger.info(f"Loaded OpenML dataset {openml_id} with shape {df.shape}")
+            try:
+                if str(dataset_id).startswith('openml_'):
+                    openml_id = int(dataset_id.replace('openml_', ''))
+                else:
+                    openml_id = int(dataset_id)
+                df = openml_service.get_dataset(openml_id)
+                logger.info(f"Loaded OpenML dataset {openml_id} with shape {df.shape}")
+            except Exception as e:
+                logger.error(f"Failed to load OpenML dataset {dataset_id}: {e}")
+                raise ValueError(f"Could not load OpenML dataset {dataset_id}: {e}")
         
         elif dataset_source == 'kaggle':
-            # For Kaggle, we'd need to store the dataset name
-            dataset_name = config.get('dataset_name')
-            df = kaggle_service.download_dataset(dataset_name)
-            logger.info(f"Loaded Kaggle dataset {dataset_name} with shape {df.shape}")
+            # For Kaggle datasets, use the dataset_id directly as the dataset name
+            try:
+                df = kaggle_service.download_dataset(dataset_id)
+                logger.info(f"Loaded Kaggle dataset {dataset_id} with shape {df.shape}")
+            except Exception as e:
+                logger.error(f"Failed to load Kaggle dataset {dataset_id}: {e}")
+                raise ValueError(f"Could not load Kaggle dataset {dataset_id}: {e}")
         
         elif dataset_source == 'upload':
-            # For uploaded files, load from storage
-            # TODO: Implement file storage and retrieval
-            raise NotImplementedError("File upload training not yet implemented")
+            # For uploaded files, try to load from temporary storage first
+            import os
+            import tempfile
+            
+            # Check if the dataset was temporarily stored
+            temp_dir = tempfile.gettempdir()
+            possible_paths = [
+                os.path.join(temp_dir, f"dataset_upload_{dataset_id}.csv"),
+                os.path.join(temp_dir, f"dataset_{dataset_source}_{dataset_id.replace('/', '_')}.csv"),
+                os.path.join(temp_dir, f"{dataset_id}.csv"),
+                dataset_id  # In case dataset_id is actually a file path
+            ]
+            
+            df = None
+            for path in possible_paths:
+                try:
+                    if os.path.exists(path):
+                        df = pd.read_csv(path)
+                        logger.info(f"Loaded uploaded dataset from {path} with shape {df.shape}")
+                        break
+                except Exception as e:
+                    logger.warning(f"Failed to load from {path}: {e}")
+                    continue
+            
+            if df is None:
+                raise ValueError(f"Could not find uploaded dataset file for ID: {dataset_id}")
+        
+        elif dataset_source == 'local':
+            # For local test datasets
+            import os
+            
+            # Path to local test datasets
+            script_dir = os.path.dirname(os.path.dirname(__file__))  # Go up from scripts/
+            dataset_path = os.path.join(script_dir, 'test_datasets', f"{dataset_id}.csv")
+            
+            try:
+                if os.path.exists(dataset_path):
+                    df = pd.read_csv(dataset_path)
+                    logger.info(f"Loaded local dataset from {dataset_path} with shape {df.shape}")
+                else:
+                    raise FileNotFoundError(f"Local dataset file not found: {dataset_path}")
+            except Exception as e:
+                logger.error(f"Failed to load local dataset {dataset_id}: {e}")
+                raise ValueError(f"Could not load local dataset {dataset_id}: {e}")
         
         else:
             raise ValueError(f"Unknown dataset source: {dataset_source}")
