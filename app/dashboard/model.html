@@ -1,0 +1,195 @@
+<html>
+  <head>
+    <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="" />
+    <link
+      rel="stylesheet"
+      as="style"
+      onload="this.rel='stylesheet'"
+      href="https://fonts.googleapis.com/css2?display=swap&amp;family=Inter%3Awght%40400%3B500%3B700%3B900&amp;family=Noto+Sans%3Awght%40400%3B500%3B700%3B900"
+    />
+
+    <title>Stitch Design</title>
+    <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64," />
+
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  </head>
+  <body>
+    <div
+      class="relative flex size-full min-h-screen flex-col bg-[#f9fbf9] group/design-root overflow-x-hidden"
+      style="--select-button-svg: url('data:image/svg+xml,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2724px%27 height=%2724px%27 fill=%27rgb(87,142,87)%27 viewBox=%270 0 256 256%27%3e%3cpath d=%27M181.66,170.34a8,8,0,0,1,0,11.32l-48,48a8,8,0,0,1-11.32,0l-48-48a8,8,0,0,1,11.32-11.32L128,212.69l42.34-42.35A8,8,0,0,1,181.66,170.34Zm-96-84.68L128,43.31l42.34,42.35a8,8,0,0,0,11.32-11.32l-48-48a8,8,0,0,0-11.32,0l-48,48A8,8,0,0,0,85.66,85.66Z%27%3e%3c/path%3e%3c/svg%3e'); font-family: Inter, &quot;Noto Sans&quot;, sans-serif;"
+    >
+      <div class="layout-container flex h-full grow flex-col">
+        <header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#e9f1e9] px-10 py-3">
+          <div class="flex items-center gap-4 text-[#101910]">
+            <div class="size-4">
+              <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <g clip-path="url(#clip0_6_319)">
+                  <path
+                    d="M8.57829 8.57829C5.52816 11.6284 3.451 15.5145 2.60947 19.7452C1.76794 23.9758 2.19984 28.361 3.85056 32.3462C5.50128 36.3314 8.29667 39.7376 11.8832 42.134C15.4698 44.5305 19.6865 45.8096 24 45.8096C28.3135 45.8096 32.5302 44.5305 36.1168 42.134C39.7033 39.7375 42.4987 36.3314 44.1494 32.3462C45.8002 28.361 46.2321 23.9758 45.3905 19.7452C44.549 15.5145 42.4718 11.6284 39.4217 8.57829L24 24L8.57829 8.57829Z"
+                    fill="currentColor"
+                  ></path>
+                </g>
+                <defs>
+                  <clipPath id="clip0_6_319"><rect width="48" height="48" fill="white"></rect></clipPath>
+                </defs>
+              </svg>
+            </div>
+            <h2 class="text-[#101910] text-lg font-bold leading-tight tracking-[-0.015em]">AutoML</h2>
+          </div>
+          <div class="flex flex-1 justify-end gap-8">
+            <div class="flex items-center gap-9">
+              <a class="text-[#101910] text-sm font-medium leading-normal" href="#">Overview</a>
+              <a class="text-[#101910] text-sm font-medium leading-normal" href="#">Datasets</a>
+              <a class="text-[#101910] text-sm font-medium leading-normal" href="#">Experiments</a>
+              <a class="text-[#101910] text-sm font-medium leading-normal" href="#">Models</a>
+              <a class="text-[#101910] text-sm font-medium leading-normal" href="#">Docs</a>
+            </div>
+            <div
+              class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10"
+              style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuChM-rcQ3Ttl2VRRAFiSBJmyOcaOWeceQfdDbGvQBGY3Y3CJqEwTohx8U5pU3uGbLacOFqyNwrPMagZoQbtXU8QDmWVhH3naphvXunVn6Xpr-mDMywfUXcfdVazO0oeumcsHiO-bhNwE0ov4dr1ks4MTU2Cx_XsXxwLiXs_tww75_GBO6hoUFfmRcD_KPbGsgpAl-su6BovPRjM2SqT1mZQ-c08KkeqO-4XNQ3OG1bXokTNMozgBQwMaDL3YmPSSfuniwVCiwg3BXQ");'
+            ></div>
+          </div>
+        </header>
+        <div class="gap-1 px-6 flex flex-1 justify-center py-5">
+          <div class="layout-content-container flex flex-col max-w-[920px] flex-1">
+            <div class="flex flex-wrap justify-between gap-3 p-4">
+              <div class="flex min-w-72 flex-col gap-3">
+                <p class="text-[#101910] tracking-light text-[32px] font-bold leading-tight">Model Selection &amp; Configuration</p>
+                <p class="text-[#578e57] text-sm font-normal leading-normal">
+                  Choose a machine learning model for training. If you're unsure, we’ll recommend one based on your dataset.
+                </p>
+              </div>
+            </div>
+            <div class="flex justify-stretch">
+              <div class="flex flex-1 gap-3 flex-wrap px-4 py-3 justify-between">
+                <button
+                  class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-full h-10 px-4 bg-[#e9f1e9] text-[#101910] text-sm font-bold leading-normal tracking-[0.015em]"
+                >
+                  <span class="truncate">← Back to Data Preview</span>
+                </button>
+                <button
+                  class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-full h-10 px-4 bg-[#5bd65b] text-[#101910] text-sm font-bold leading-normal tracking-[0.015em]"
+                >
+                  <span class="truncate">Train Model →</span>
+                </button>
+              </div>
+            </div>
+            <h2 class="text-[#101910] text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">Select a Model</h2>
+            <div class="grid grid-cols-[repeat(auto-fit,minmax(158px,1fr))] gap-3 p-4">
+              <div class="flex flex-col gap-3 pb-3">
+                <div
+                  class="w-full bg-center bg-no-repeat aspect-square bg-cover rounded-xl"
+                  style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCJbbw6xr3tTO7843lVsaL-ryYCcUzWdMjLBowHMwzfe6vCk-FqaZPyPxQ2BOxCEUckzZQ1SkSooFT1T13D9rSA_Ie9p950kT1zcY3MiSrtm2tBZv27te29qKPUq8KVKwLRJdoIDkuUzkI1sWKbRLzEP2f7jOdhSFHZ6-aPfp42_MC_qSC7PXbNf8kd8SBnkz7U6YMPkX1LS0iOguFKDS3Ti55BwdRbWRMedgZflDgzxPNtCSKwDlwNDRE83cWogxIoNbAMWDPqp3c");'
+                ></div>
+                <div>
+                  <p class="text-[#101910] text-base font-medium leading-normal">Logistic Regression</p>
+                  <p class="text-[#578e57] text-sm font-normal leading-normal">A linear model for binary classification.</p>
+                </div>
+              </div>
+              <div class="flex flex-col gap-3 pb-3">
+                <div
+                  class="w-full bg-center bg-no-repeat aspect-square bg-cover rounded-xl"
+                  style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDSwdzR4PH6hmYErHh5YAQis-yPs3rYLz_ChqOsaDvEqvXUhrXNOuru6Dj-EmTfR_-e8pYK62G0vBadjLM6ASVfZ8qDz8t38iNnAimyYDPl75lUdRBsXFpQ03_iPknmI34oCDGEgPCSSkMi2_CZPVCnDoDTvE4tHD8x9pB5l8kGvBIEYz1oNhM33zuUf6vuu1Gk3O9YyGPrPrYHzAJSlfKNHAQrpzwEUDcPy8rzj8N--atSEtMvvBLcIID-5fVUqlN9zxE5dAn-iGk");'
+                ></div>
+                <div>
+                  <p class="text-[#101910] text-base font-medium leading-normal">Random Forest</p>
+                  <p class="text-[#578e57] text-sm font-normal leading-normal">An ensemble of decision trees for classification and regression.</p>
+                </div>
+              </div>
+              <div class="flex flex-col gap-3 pb-3">
+                <div
+                  class="w-full bg-center bg-no-repeat aspect-square bg-cover rounded-xl"
+                  style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuA5OkzBuRr5sABjvDhU7amWguOC-tl0RrjGPXOY2wzTajRSGQJny8iyuEqLj4tQ19meuTCCM-7dQjoQKJZ5Ug5s0blVebv5CvRhM_SsGwSCzHxY2b8c2MNBE1-ejSezKpn_rSWoy_qYvqZUykCzP21tDJgNO8ybf3qrBYk7TOXjAZqxUwWbSetX4mUuiF7Tx-7rlDLIBH40-qUuECtRD5dj6KhOXrzCfubCIGPOANU-qQTMny9HaUDJAEo3P5K46hloOgybIySZdBA");'
+                ></div>
+                <div>
+                  <p class="text-[#101910] text-base font-medium leading-normal">Support Vector Machine</p>
+                  <p class="text-[#578e57] text-sm font-normal leading-normal">A powerful model for classification and regression.</p>
+                </div>
+              </div>
+              <div class="flex flex-col gap-3 pb-3">
+                <div
+                  class="w-full bg-center bg-no-repeat aspect-square bg-cover rounded-xl"
+                  style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBMdKc85t7mUXtC9QaQHRxcuYl3qC9l5MAapFmdlKXS8xQETSIvNWrCY7QL8Lu1VmqoP3QWPhCIRQVqklbaq5TkkGtUH43_lv8-eoJqMkJZUBbTtyiDrGFTv0RSaDkOJ7EtZN0rVUbE7wy-WeXo1xDP5qbjYbl-Z7kiXrEwuG3vk14JufdBXfU2Z9XtbYvXPEvL-onBa7URUv2UXskE0wO0S_ZaxRAY1u_Y_dC2FmMnS5sc7AmSeFjjQm2a25m7I1Fmsa1eSpCFRyU");'
+                ></div>
+                <div>
+                  <p class="text-[#101910] text-base font-medium leading-normal">K-Nearest Neighbors</p>
+                  <p class="text-[#578e57] text-sm font-normal leading-normal">A simple, non-parametric model for classification and regression.</p>
+                </div>
+              </div>
+            </div>
+            <h2 class="text-[#101910] text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">Auto Mode</h2>
+            <div class="flex items-center gap-4 bg-[#f9fbf9] px-4 min-h-[72px] py-2 justify-between">
+              <div class="flex flex-col justify-center">
+                <p class="text-[#101910] text-base font-medium leading-normal line-clamp-1">Enable Auto Mode</p>
+                <p class="text-[#578e57] text-sm font-normal leading-normal line-clamp-2">Let the system automatically select the best model and parameters for your dataset.</p>
+              </div>
+              <div class="shrink-0">
+                <label
+                  class="relative flex h-[31px] w-[51px] cursor-pointer items-center rounded-full border-none bg-[#e9f1e9] p-0.5 has-[:checked]:justify-end has-[:checked]:bg-[#5bd65b]"
+                >
+                  <div class="h-full w-[27px] rounded-full bg-white" style="box-shadow: rgba(0, 0, 0, 0.15) 0px 3px 8px, rgba(0, 0, 0, 0.06) 0px 3px 1px;"></div>
+                  <input type="checkbox" class="invisible absolute" />
+                </label>
+              </div>
+            </div>
+            <p class="text-[#578e57] text-sm font-normal leading-normal pb-3 pt-1 px-4">
+              When Auto Mode is enabled, manual configuration will be disabled and the system will automatically select the best model and parameters for your dataset.
+            </p>
+          </div>
+          <div class="layout-content-container flex flex-col w-[360px]">
+            <h2 class="text-[#101910] text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">Model Configuration</h2>
+            <div class="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3">
+              <label class="flex flex-col min-w-40 flex-1">
+                <p class="text-[#101910] text-base font-medium leading-normal pb-2">Model</p>
+                <select
+                  class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-xl text-[#101910] focus:outline-0 focus:ring-0 border border-[#d3e4d3] bg-[#f9fbf9] focus:border-[#d3e4d3] h-14 bg-[image:--select-button-svg] placeholder:text-[#578e57] p-[15px] text-base font-normal leading-normal"
+                >
+                  <option value="one"></option>
+                  <option value="two">two</option>
+                  <option value="three">three</option>
+                </select>
+              </label>
+            </div>
+            <div class="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3">
+              <label class="flex flex-col min-w-40 flex-1">
+                <p class="text-[#101910] text-base font-medium leading-normal pb-2">n_estimators</p>
+                <input
+                  class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-xl text-[#101910] focus:outline-0 focus:ring-0 border border-[#d3e4d3] bg-[#f9fbf9] focus:border-[#d3e4d3] h-14 placeholder:text-[#578e57] p-[15px] text-base font-normal leading-normal"
+                  value=""
+                />
+              </label>
+            </div>
+            <div class="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3">
+              <label class="flex flex-col min-w-40 flex-1">
+                <p class="text-[#101910] text-base font-medium leading-normal pb-2">max_depth</p>
+                <input
+                  class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-xl text-[#101910] focus:outline-0 focus:ring-0 border border-[#d3e4d3] bg-[#f9fbf9] focus:border-[#d3e4d3] h-14 placeholder:text-[#578e57] p-[15px] text-base font-normal leading-normal"
+                  value=""
+                />
+              </label>
+            </div>
+            <div class="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3">
+              <label class="flex flex-col min-w-40 flex-1">
+                <p class="text-[#101910] text-base font-medium leading-normal pb-2">criterion</p>
+                <select
+                  class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-xl text-[#101910] focus:outline-0 focus:ring-0 border border-[#d3e4d3] bg-[#f9fbf9] focus:border-[#d3e4d3] h-14 bg-[image:--select-button-svg] placeholder:text-[#578e57] p-[15px] text-base font-normal leading-normal"
+                >
+                  <option value="one"></option>
+                  <option value="two">two</option>
+                  <option value="three">three</option>
+                </select>
+              </label>
+            </div>
+            <div class="flex px-4 py-3 justify-end">
+              <button
+                class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-full h-10 px-4 bg-[#e9f1e9] text-[#101910] text-sm font-bold leading-normal tracking-[0.015em]"
+              >
+                <span class="truncate">Reset to Default</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
