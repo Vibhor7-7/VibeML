@@ -1,11 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { Upload, Play, Download, Settings, BarChart3, Database, Code, Globe, Target, FileText } from 'lucide-react'
+import { Upload, Play, Download, Settings, BarChart3, Database, Code, Globe, Target, FileText, Search } from 'lucide-react'
 import Image from 'next/image'
+import DatasetSearch from './components/DatasetSearch'
+import TrainingProgress from './components/TrainingProgress'
+import ModelList from './components/ModelList'
+import PredictionForm from './components/PredictionForm'
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState('upload')
+  const [activeTab, setActiveTab] = useState('search')
   const [isTraining, setIsTraining] = useState(false)
   const [logs, setLogs] = useState<string[]>([])
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
@@ -13,6 +17,8 @@ export default function Dashboard() {
   const [previewData, setPreviewData] = useState<any[]>([])
   const [selectedModel, setSelectedModel] = useState('')
   const [autoMode, setAutoMode] = useState(false)
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null)
+  const [selectedDataset, setSelectedDataset] = useState<any>(null)
   const [modelConfig, setModelConfig] = useState({
     n_estimators: '',
     max_depth: '',
@@ -91,6 +97,7 @@ export default function Dashboard() {
   }
 
   const navItems = [
+    { id: 'search', label: 'Search Datasets', icon: Search, color: 'purple' },
     { id: 'upload', label: 'Upload Data', icon: Upload, color: 'blue' },
     { id: 'train', label: 'Train Model', icon: Play, color: 'green' },
     { id: 'evaluate', label: 'Evaluate', icon: Target, color: 'purple' },
@@ -127,24 +134,40 @@ export default function Dashboard() {
             {navItems.map((item) => {
               const Icon = item.icon
               const isActive = activeTab === item.id
+              
+              // Check if tab should be disabled
+              const hasDataset = selectedDataset || uploadedFile
+              const isDataTab = item.id === 'search' || item.id === 'upload'
+              const isDisabled = !isDataTab && !hasDataset
+              
               const colorClasses = {
-                blue: isActive ? 'bg-blue-600/20 text-blue-300 border-blue-500/30' : 'text-gray-300 hover:text-blue-300 hover:bg-blue-600/10',
-                green: isActive ? 'bg-green-600/20 text-green-300 border-green-500/30' : 'text-gray-300 hover:text-green-300 hover:bg-green-600/10',
-                purple: isActive ? 'bg-purple-600/20 text-purple-300 border-purple-500/30' : 'text-gray-300 hover:text-purple-300 hover:bg-purple-600/10',
-                orange: isActive ? 'bg-orange-600/20 text-orange-300 border-orange-500/30' : 'text-gray-300 hover:text-orange-300 hover:bg-orange-600/10',
-                cyan: isActive ? 'bg-cyan-600/20 text-cyan-300 border-cyan-500/30' : 'text-gray-300 hover:text-cyan-300 hover:bg-cyan-600/10',
+                blue: isActive ? 'bg-blue-600/20 text-blue-300 border-blue-500/30' : isDisabled ? 'text-gray-500 cursor-not-allowed' : 'text-gray-300 hover:text-blue-300 hover:bg-blue-600/10',
+                green: isActive ? 'bg-green-600/20 text-green-300 border-green-500/30' : isDisabled ? 'text-gray-500 cursor-not-allowed' : 'text-gray-300 hover:text-green-300 hover:bg-green-600/10',
+                purple: isActive ? 'bg-purple-600/20 text-purple-300 border-purple-500/30' : isDisabled ? 'text-gray-500 cursor-not-allowed' : 'text-gray-300 hover:text-purple-300 hover:bg-purple-600/10',
+                orange: isActive ? 'bg-orange-600/20 text-orange-300 border-orange-500/30' : isDisabled ? 'text-gray-500 cursor-not-allowed' : 'text-gray-300 hover:text-orange-300 hover:bg-orange-600/10',
+                cyan: isActive ? 'bg-cyan-600/20 text-cyan-300 border-cyan-500/30' : isDisabled ? 'text-gray-500 cursor-not-allowed' : 'text-gray-300 hover:text-cyan-300 hover:bg-cyan-600/10',
               }
               
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => {
+                    if (!isDisabled) {
+                      setActiveTab(item.id)
+                    }
+                  }}
+                  disabled={isDisabled}
                   className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
                     isActive ? `border ${colorClasses[item.color]}` : colorClasses[item.color]
-                  }`}
+                  } ${isDisabled ? 'opacity-50' : ''}`}
                 >
                   <Icon className="w-5 h-5" />
                   <span className="font-medium">{item.label}</span>
+                  {isDisabled && (
+                    <span className="ml-auto text-xs bg-gray-600 text-gray-300 px-2 py-1 rounded">
+                      Locked
+                    </span>
+                  )}
                 </button>
               )
             })}
@@ -161,13 +184,41 @@ export default function Dashboard() {
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">Datasets</span>
-              <span className="text-green-400 font-medium">0</span>
+              <span className={`font-medium ${(selectedDataset || uploadedFile) ? 'text-green-400' : 'text-gray-500'}`}>
+                {(selectedDataset || uploadedFile) ? '1' : '0'}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">APIs</span>
               <span className="text-cyan-400 font-medium">0</span>
             </div>
           </div>
+          
+          {/* Dataset Status */}
+          {(selectedDataset || uploadedFile) && (
+            <div className="mt-4 p-3 bg-green-900/20 border border-green-500/30 rounded-lg">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                <span className="text-green-300 text-xs font-medium">Dataset Ready</span>
+              </div>
+              <p className="text-green-200 text-xs">
+                {selectedDataset ? selectedDataset.name : uploadedFile?.name}
+              </p>
+            </div>
+          )}
+          
+          {/* Instructions when no dataset */}
+          {!selectedDataset && !uploadedFile && (
+            <div className="mt-4 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-2 h-2 bg-yellow-400 rounded-full"></div>
+                <span className="text-yellow-300 text-xs font-medium">Get Started</span>
+              </div>
+              <p className="text-yellow-200 text-xs">
+                Search or upload a dataset to unlock all features
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -176,6 +227,21 @@ export default function Dashboard() {
         {/* Main Panel */}
         <main className="flex-1 p-8 overflow-y-auto">
           <div className="max-w-6xl mx-auto">
+            {activeTab === 'search' && (
+              <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                <h2 className="text-2xl font-semibold mb-6 flex items-center text-white">
+                  <Search className="w-6 h-6 mr-3 text-purple-400" />
+                  Search Datasets
+                </h2>
+                <DatasetSearch
+                  onDatasetSelect={(dataset) => {
+                    setSelectedDataset(dataset)
+                    setActiveTab('train')
+                  }}
+                />
+              </div>
+            )}
+
             {activeTab === 'upload' && (
               <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
                 <h2 className="text-2xl font-semibold mb-6 flex items-center text-white">
@@ -280,181 +346,220 @@ export default function Dashboard() {
             )}
 
             {activeTab === 'train' && (
-              <div className="flex gap-6">
-                {/* Main Model Selection Panel */}
-                <div className="flex-1">
-                  <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700 mb-6">
-                    <div className="flex justify-between items-start mb-6">
-                      <div>
-                        <h2 className="text-2xl font-semibold flex items-center text-white mb-2">
-                          <Play className="w-6 h-6 mr-3 text-green-400" />
-                          Model Selection & Configuration
-                        </h2>
-                        <p className="text-gray-300 text-sm">
-                          Choose a machine learning model for training. If you're unsure, we'll recommend one based on your dataset.
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex justify-between mb-6">
-                      <button
-                        onClick={() => setActiveTab('upload')}
-                        className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-all font-medium"
-                      >
-                        ← Back to Data Preview
-                      </button>
-                      <button
-                        onClick={handleTrain}
-                        disabled={!selectedModel && !autoMode}
-                        className={`px-6 py-2 rounded-lg font-medium transition-all ${
-                          (!selectedModel && !autoMode)
-                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                            : 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:from-green-700 hover:to-green-800'
-                        }`}
-                      >
-                        Train Model →
-                      </button>
-                    </div>
-
-                    {/* Auto Mode Toggle */}
-                    <div className="bg-gray-700/30 rounded-lg p-4 mb-6 border border-gray-600">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="text-white font-medium mb-1">Enable Auto Mode</h3>
-                          <p className="text-gray-300 text-sm">
-                            Let the system automatically select the best model and parameters for your dataset.
-                          </p>
-                        </div>
-                        <label className="relative flex h-8 w-14 cursor-pointer items-center rounded-full bg-gray-600 p-1 transition-colors has-[:checked]:bg-green-600">
-                          <div className={`h-6 w-6 rounded-full bg-white transition-transform ${autoMode ? 'translate-x-6' : ''}`}></div>
-                          <input
-                            type="checkbox"
-                            className="sr-only"
-                            checked={autoMode}
-                            onChange={(e) => setAutoMode(e.target.checked)}
-                          />
-                        </label>
-                      </div>
-                      {autoMode && (
-                        <p className="text-green-300 text-sm mt-2">
-                          Auto mode enabled. Manual configuration is disabled.
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Model Selection Grid */}
-                    {!autoMode && (
-                      <>
-                        <h3 className="text-xl font-semibold text-white mb-4">Select a Model</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                          {models.map((model) => (
-                            <div
-                              key={model.id}
-                              onClick={() => setSelectedModel(model.id)}
-                              className={`cursor-pointer rounded-lg border-2 transition-all p-4 ${
-                                selectedModel === model.id
-                                  ? 'border-green-500 bg-green-900/20'
-                                  : 'border-gray-600 bg-gray-700/30 hover:border-gray-500'
-                              }`}
-                            >
-                              <div
-                                className="w-full aspect-square bg-center bg-no-repeat bg-cover rounded-lg mb-3"
-                                style={{ backgroundImage: `url("${model.image}")` }}
-                              ></div>
-                              <h4 className="text-white font-medium mb-1">{model.name}</h4>
-                              <p className="text-gray-300 text-sm">{model.description}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Model Configuration Panel */}
-                {!autoMode && (
-                  <div className="w-80">
-                    <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
-                      <h3 className="text-xl font-semibold text-white mb-6">Model Configuration</h3>
-                      
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Model Type
-                          </label>
-                          <select
-                            value={selectedModel}
-                            onChange={(e) => setSelectedModel(e.target.value)}
-                            className="w-full p-3 border border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white"
-                          >
-                            <option value="">Select model...</option>
-                            {models.map((model) => (
-                              <option key={model.id} value={model.id}>
-                                {model.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {selectedModel === 'random_forest' && (
-                          <>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-300 mb-2">
-                                n_estimators
-                              </label>
-                              <input
-                                type="number"
-                                value={modelConfig.n_estimators}
-                                onChange={(e) => setModelConfig({...modelConfig, n_estimators: e.target.value})}
-                                placeholder="100"
-                                className="w-full p-3 border border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white placeholder-gray-400"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-300 mb-2">
-                                max_depth
-                              </label>
-                              <input
-                                type="number"
-                                value={modelConfig.max_depth}
-                                onChange={(e) => setModelConfig({...modelConfig, max_depth: e.target.value})}
-                                placeholder="None"
-                                className="w-full p-3 border border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white placeholder-gray-400"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-300 mb-2">
-                                criterion
-                              </label>
-                              <select
-                                value={modelConfig.criterion}
-                                onChange={(e) => setModelConfig({...modelConfig, criterion: e.target.value})}
-                                className="w-full p-3 border border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white"
-                              >
-                                <option value="gini">gini</option>
-                                <option value="entropy">entropy</option>
-                              </select>
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      <div className="flex justify-end mt-6">
+              <>
+                {!selectedDataset && !uploadedFile ? (
+                  <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-12 border border-gray-700 text-center">
+                    <div className="max-w-md mx-auto">
+                      <Play className="w-16 h-16 text-gray-500 mx-auto mb-6" />
+                      <h2 className="text-2xl font-semibold text-white mb-4">Dataset Required</h2>
+                      <p className="text-gray-300 mb-8">
+                        To start training a model, you need to first search for a dataset or upload your own data file.
+                      </p>
+                      <div className="flex gap-4 justify-center">
                         <button
-                          onClick={() => setModelConfig({ n_estimators: '', max_depth: '', criterion: 'gini' })}
-                          className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-all font-medium"
+                          onClick={() => setActiveTab('search')}
+                          className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-all font-medium"
                         >
-                          Reset to Default
+                          Search Datasets
+                        </button>
+                        <button
+                          onClick={() => setActiveTab('upload')}
+                          className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-all font-medium"
+                        >
+                          Upload Data
                         </button>
                       </div>
                     </div>
                   </div>
+                ) : (
+                  <div className="space-y-6">
+                {/* Header */}
+                <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                  <h2 className="text-2xl font-semibold mb-6 flex items-center text-white">
+                    <Play className="w-6 h-6 mr-3 text-green-400" />
+                    Train Model
+                  </h2>
+                  
+                  {selectedDataset && (
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mb-6">
+                      <h3 className="text-blue-300 font-medium mb-2">Selected Dataset</h3>
+                      <p className="text-white">{selectedDataset.name}</p>
+                      <p className="text-gray-300 text-sm">{selectedDataset.description}</p>
+                    </div>
+                  )}
+                  
+                  {uploadedFile && (
+                    <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4 mb-6">
+                      <h3 className="text-green-300 font-medium mb-2">Uploaded File</h3>
+                      <p className="text-white">{uploadedFile.name}</p>
+                      <p className="text-gray-300 text-sm">Ready for training</p>
+                    </div>
+                  )}
+                  
+                  {!selectedDataset && !uploadedFile && (
+                    <div className="bg-gray-700/30 rounded-lg p-4 text-center">
+                      <p className="text-gray-300 mb-4">No dataset selected. Please search for a dataset or upload your own file.</p>
+                      <div className="flex gap-4 justify-center">
+                        <button
+                          onClick={() => setActiveTab('search')}
+                          className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-all"
+                        >
+                          Search Datasets
+                        </button>
+                        <button
+                          onClick={() => setActiveTab('upload')}
+                          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-all"
+                        >
+                          Upload File
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Training Form and Progress */}
+                {(selectedDataset || uploadedFile) && (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Training Configuration */}
+                    <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                      <h3 className="text-xl font-semibold text-white mb-6">Training Configuration</h3>
+                      
+                      {/* Auto Mode Toggle */}
+                      <div className="bg-gray-700/30 rounded-lg p-4 mb-6 border border-gray-600">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-white font-medium mb-1">Auto Mode</h4>
+                            <p className="text-gray-300 text-sm">
+                              Automatically select the best model and parameters
+                            </p>
+                          </div>
+                          <label className="relative flex h-8 w-14 cursor-pointer items-center rounded-full bg-gray-600 p-1 transition-colors has-[:checked]:bg-green-600">
+                            <div className={`h-6 w-6 rounded-full bg-white transition-transform ${autoMode ? 'translate-x-6' : ''}`}></div>
+                            <input
+                              type="checkbox"
+                              className="sr-only"
+                              checked={autoMode}
+                              onChange={(e) => setAutoMode(e.target.checked)}
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Model Selection */}
+                      {!autoMode && (
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">
+                              Model Type
+                            </label>
+                            <select
+                              value={selectedModel}
+                              onChange={(e) => setSelectedModel(e.target.value)}
+                              className="w-full p-3 border border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white"
+                            >
+                              <option value="">Select model...</option>
+                              {models.map((model) => (
+                                <option key={model.id} value={model.id}>
+                                  {model.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {selectedModel === 'random_forest' && (
+                            <>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">
+                                  n_estimators
+                                </label>
+                                <input
+                                  type="number"
+                                  value={modelConfig.n_estimators}
+                                  onChange={(e) => setModelConfig({...modelConfig, n_estimators: e.target.value})}
+                                  placeholder="100"
+                                  className="w-full p-3 border border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white placeholder-gray-400"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">
+                                  max_depth
+                                </label>
+                                <input
+                                  type="number"
+                                  value={modelConfig.max_depth}
+                                  onChange={(e) => setModelConfig({...modelConfig, max_depth: e.target.value})}
+                                  placeholder="None"
+                                  className="w-full p-3 border border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white placeholder-gray-400"
+                                />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Start Training Button */}
+                      <div className="mt-6">
+                        <button
+                          onClick={handleTrain}
+                          disabled={!selectedModel && !autoMode}
+                          className={`w-full px-6 py-3 rounded-lg font-medium transition-all ${
+                            (!selectedModel && !autoMode) || isTraining
+                              ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                              : 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:from-green-700 hover:to-green-800'
+                          }`}
+                        >
+                          {isTraining ? 'Training in Progress...' : 'Start Training'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Training Progress */}
+                    <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                      <h3 className="text-xl font-semibold text-white mb-6">Training Progress</h3>
+                      <TrainingProgress 
+                        jobId={currentJobId}
+                        onJobComplete={(jobId) => {
+                          setIsTraining(false)
+                          setCurrentJobId(null)
+                          setActiveTab('evaluate')
+                        }}
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
+                )}
+              </>
             )}
 
             {activeTab === 'evaluate' && (
-              <div className="space-y-6">
+              <>
+                {!selectedDataset && !uploadedFile ? (
+                  <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-12 border border-gray-700 text-center">
+                    <div className="max-w-md mx-auto">
+                      <Target className="w-16 h-16 text-gray-500 mx-auto mb-6" />
+                      <h2 className="text-2xl font-semibold text-white mb-4">Dataset Required</h2>
+                      <p className="text-gray-300 mb-8">
+                        To evaluate models, you need to first have a dataset and train a model.
+                      </p>
+                      <div className="flex gap-4 justify-center">
+                        <button
+                          onClick={() => setActiveTab('search')}
+                          className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-all font-medium"
+                        >
+                          Search Datasets
+                        </button>
+                        <button
+                          onClick={() => setActiveTab('upload')}
+                          className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-all font-medium"
+                        >
+                          Upload Data
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
                 {/* Header Section */}
                 <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
                   <div className="flex justify-between items-start mb-6">
@@ -745,178 +850,88 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
+                )}
+              </>
             )}
 
             {activeTab === 'predict' && (
-              <div className="flex flex-row gap-8">
-                {/* Main Prediction Section */}
-                <div className="flex flex-col flex-1 max-w-3xl">
-                  <div className="flex flex-wrap justify-between gap-3 mb-6">
-                    <div className="flex min-w-72 flex-col gap-3">
-                      <p className="text-white text-3xl font-bold leading-tight">📊 Predictions</p>
-                      <p className="text-blue-300 text-sm font-normal">Use your trained model to make predictions on new data.</p>
-                    </div>
-                    <button className="bg-gray-700 text-white px-6 py-2 rounded-lg font-medium hover:bg-gray-600 transition-all">
-                      Upload New Dataset for Prediction
-                    </button>
-                  </div>
-                  <div className="mb-6">
-                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 rounded-lg border border-gray-700 bg-gray-900 p-5">
-                      <div className="flex flex-col gap-1">
-                        <p className="text-white text-base font-bold">Prediction Options</p>
-                        <p className="text-blue-300 text-base font-normal">Step 1: Upload a CSV file to make predictions</p>
-                      </div>
-                      <button className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-all">
-                        Upload CSV
-                      </button>
-                    </div>
-                  </div>
-                  <div className="mb-6">
-                    <div className="flex items-stretch justify-between gap-4 rounded-lg">
-                      <div className="flex flex-col gap-1 flex-[2_2_0px]">
-                        <p className="text-white text-base font-bold">Model Used: Random Forest Classifier</p>
-                        <p className="text-blue-300 text-sm font-normal">Last Trained: 2024-01-15 | Training Accuracy: 92% | Dataset: Customer Churn Data</p>
-                      </div>
-                      <div className="hidden md:block w-full max-w-xs aspect-video bg-gray-700 rounded-lg border border-gray-600"></div>
-                    </div>
-                  </div>
-                  {/* Prediction Table */}
-                  <div className="mb-6">
-                    <div className="overflow-x-auto rounded-lg border border-gray-700 bg-gray-900">
-                      <table className="min-w-full">
-                        <thead>
-                          <tr className="bg-gray-900">
-                            <th className="px-4 py-3 text-left text-white text-sm font-medium">Row ID</th>
-                            <th className="px-4 py-3 text-left text-white text-sm font-medium">Original Inputs</th>
-                            <th className="px-4 py-3 text-left text-white text-sm font-medium">Prediction</th>
-                            <th className="px-4 py-3 text-left text-white text-sm font-medium">Confidence</th>
-                            <th className="px-4 py-3 text-left text-white text-sm font-medium">Probability</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[1,2,3,4,5,6,7,8,9,10].map((row) => (
-                            <tr key={row} className="border-t border-gray-700">
-                              <td className="px-4 py-2 text-white text-sm">{row}</td>
-                              <td className="px-4 py-2 text-blue-300 text-sm">{'{feature1: value1, feature2: value2, ...}'}</td>
-                              <td className="px-4 py-2 text-sm">
-                                <button className="bg-gray-700 text-white px-4 py-2 rounded-lg font-medium w-full">
-                                  <span className="truncate">{row % 2 === 0 ? 'No Churn' : 'Churn'}</span>
-                                </button>
-                              </td>
-                              <td className="px-4 py-2 text-sm">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-20 h-1 rounded-full bg-gray-600 overflow-hidden">
-                                    <div className="h-1 rounded-full bg-blue-600" style={{width: `${80 + row}%`}}></div>
-                                  </div>
-                                  <p className="text-white text-sm font-medium">{80 + row}</p>
-                                </div>
-                              </td>
-                              <td className="px-4 py-2 text-sm">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-20 h-1 rounded-full bg-gray-600 overflow-hidden">
-                                    <div className="h-1 rounded-full bg-blue-600" style={{width: `${85 + row}%`}}></div>
-                                  </div>
-                                  <p className="text-white text-sm font-medium">{85 + row}</p>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                  {/* Pagination */}
-                  <div className="flex items-center justify-center mb-6 gap-2">
-                    <button className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-700 text-white">
-                      {'<'}
-                    </button>
-                    <button className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold">1</button>
-                    <button className="w-8 h-8 rounded-full bg-gray-700 text-white">2</button>
-                    <button className="w-8 h-8 rounded-full bg-gray-700 text-white">3</button>
-                    <button className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-700 text-white">
-                      {'>'}
-                    </button>
-                  </div>
-                </div>
-                {/* Insights & Export Section */}
-                <div className="flex flex-col w-[360px]">
-                  <h2 className="text-white text-xl font-bold px-4 pb-3 pt-5">Insights</h2>
-                  <div className="flex flex-wrap gap-4 px-4 py-6">
-                    <div className="flex min-w-72 flex-1 flex-col gap-2 rounded-lg border border-gray-700 p-6 bg-gray-900">
-                      <p className="text-white text-base font-medium">Distribution of Predicted Values</p>
-                      <p className="text-white text-3xl font-bold truncate">20</p>
-                      <div className="flex gap-1">
-                        <p className="text-blue-300 text-base font-normal">Total</p>
-                        <p className="text-green-400 text-base font-medium">+5%</p>
-                      </div>
-                      <div className="grid min-h-[180px] grid-flow-col gap-6 grid-rows-[1fr_auto] items-end justify-items-center px-3">
-                        <div className="border-blue-300 bg-gray-700 border-t-2 w-full" style={{height: '40%'}}></div>
-                        <p className="text-blue-300 text-[13px] font-bold">Churn</p>
-                        <div className="border-blue-300 bg-gray-700 border-t-2 w-full" style={{height: '20%'}}></div>
-                        <p className="text-blue-300 text-[13px] font-bold">No Churn</p>
-                      </div>
-                    </div>
-                    <div className="flex min-w-72 flex-1 flex-col gap-2 rounded-lg border border-gray-700 p-6 bg-gray-900">
-                      <p className="text-white text-base font-medium">Confidence Score Histogram</p>
-                      <p className="text-white text-3xl font-bold truncate">85%</p>
-                      <div className="flex gap-1">
-                        <p className="text-blue-300 text-base font-normal">Average</p>
-                        <p className="text-red-400 text-base font-medium">-2%</p>
-                      </div>
-                      <div className="grid min-h-[180px] gap-x-4 gap-y-6 grid-cols-[auto_1fr] items-center py-3">
-                        <p className="text-blue-300 text-[13px] font-bold">70-80%</p>
-                        <div className="h-full flex-1"><div className="border-blue-300 bg-gray-700 border-r-2 h-full" style={{width: '40%'}}></div></div>
-                        <p className="text-blue-300 text-[13px] font-bold">80-90%</p>
-                        <div className="h-full flex-1"><div className="border-blue-300 bg-gray-700 border-r-2 h-full" style={{width: '60%'}}></div></div>
-                        <p className="text-blue-300 text-[13px] font-bold">90-100%</p>
-                        <div className="h-full flex-1"><div className="border-blue-300 bg-gray-700 border-r-2 h-full" style={{width: '10%'}}></div></div>
+              <>
+                {!selectedDataset && !uploadedFile ? (
+                  <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-12 border border-gray-700 text-center">
+                    <div className="max-w-md mx-auto">
+                      <BarChart3 className="w-16 h-16 text-gray-500 mx-auto mb-6" />
+                      <h2 className="text-2xl font-semibold text-white mb-4">Dataset Required</h2>
+                      <p className="text-gray-300 mb-8">
+                        To make predictions, you need to first have a dataset and train a model.
+                      </p>
+                      <div className="flex gap-4 justify-center">
+                        <button
+                          onClick={() => setActiveTab('search')}
+                          className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-all font-medium"
+                        >
+                          Search Datasets
+                        </button>
+                        <button
+                          onClick={() => setActiveTab('upload')}
+                          className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-all font-medium"
+                        >
+                          Upload Data
+                        </button>
                       </div>
                     </div>
                   </div>
-                  <h2 className="text-white text-xl font-bold px-4 pb-3 pt-5">Warnings</h2>
-                  <p className="text-white text-base font-normal pb-3 pt-1 px-4">No warnings to display.</p>
-                  <h2 className="text-white text-xl font-bold px-4 pb-3 pt-5">Download Options</h2>
-                  <div className="flex justify-center">
-                    <div className="flex flex-1 gap-3 max-w-xs flex-col items-stretch px-4 py-3">
-                      <button className="bg-gray-700 text-white px-6 py-2 rounded-lg font-bold w-full">Export as CSV</button>
-                      <button className="bg-gray-700 text-white px-6 py-2 rounded-lg font-bold w-full">Export as JSON</button>
-                    </div>
+                ) : (
+                  <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                    <h2 className="text-2xl font-semibold mb-6 flex items-center text-white">
+                      <BarChart3 className="w-6 h-6 mr-3 text-orange-400" />
+                      Make Predictions
+                    </h2>
+                    <PredictionForm />
                   </div>
-                </div>
-              </div>
+                )}
+              </>
             )}
 
             {activeTab === 'export' && (
-              <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
-                <h2 className="text-2xl font-semibold mb-6 flex items-center text-white">
-                  <FileText className="w-6 h-6 mr-3 text-cyan-400" />
-                  Export & Deploy
-                </h2>
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <button className="p-8 border-2 border-gray-600 rounded-lg hover:border-blue-500 hover:bg-blue-900/20 transition-all text-left bg-gray-900/30">
-                      <Code className="w-10 h-10 text-blue-400 mb-4" />
-                      <h3 className="font-medium text-white text-lg mb-2">Export Code</h3>
-                      <p className="text-sm text-gray-300">
-                        Download Python script with your trained model
+              <>
+                {!selectedDataset && !uploadedFile ? (
+                  <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-12 border border-gray-700 text-center">
+                    <div className="max-w-md mx-auto">
+                      <FileText className="w-16 h-16 text-gray-500 mx-auto mb-6" />
+                      <h2 className="text-2xl font-semibold text-white mb-4">Dataset Required</h2>
+                      <p className="text-gray-300 mb-8">
+                        To export models and deploy APIs, you need to first have a dataset and train a model.
                       </p>
-                    </button>
-                    <button className="p-8 border-2 border-gray-600 rounded-lg hover:border-green-500 hover:bg-green-900/20 transition-all text-left bg-gray-900/30">
-                      <Globe className="w-10 h-10 text-green-400 mb-4" />
-                      <h3 className="font-medium text-white text-lg mb-2">Deploy API</h3>
-                      <p className="text-sm text-gray-300">
-                        Create REST API endpoint for predictions
-                      </p>
-                    </button>
+                      <div className="flex gap-4 justify-center">
+                        <button
+                          onClick={() => setActiveTab('search')}
+                          className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-all font-medium"
+                        >
+                          Search Datasets
+                        </button>
+                        <button
+                          onClick={() => setActiveTab('upload')}
+                          className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-all font-medium"
+                        >
+                          Upload Data
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="bg-gray-900/50 p-6 rounded-lg border border-gray-600">
-                    <h4 className="font-medium text-white mb-3 text-lg">API Endpoint</h4>
-                    <code className="text-sm bg-gray-800 text-green-300 p-3 rounded border border-gray-600 block">
-                      https://api.vibeml.com/v1/predict/your-model-id
-                    </code>
+                ) : (
+                  <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                    <h2 className="text-2xl font-semibold mb-6 flex items-center text-white">
+                      <FileText className="w-6 h-6 mr-3 text-cyan-400" />
+                      Export & Deploy
+                    </h2>
+                    <ModelList 
+                      onModelSelect={(modelId) => {
+                        console.log('Selected model:', modelId)
+                      }}
+                    />
                   </div>
-                </div>
-              </div>
+                )}
+              </>
             )}
           </div>
         </main>
