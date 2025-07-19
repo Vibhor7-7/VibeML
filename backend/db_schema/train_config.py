@@ -51,6 +51,7 @@ class TrainConfig(BaseModel):
     """Schema for training configuration."""
     model_name: str = Field(..., description="Name for the trained model")
     dataset_id: str = Field(..., description="ID of the dataset to use")
+    dataset_source: str = Field(..., description="Source of the dataset (openml, kaggle, upload)")
     target_column: str = Field(..., description="Target column for prediction")
     problem_type: ProblemType = Field(..., description="Type of ML problem")
     algorithm: MLAlgorithm = Field(..., description="ML algorithm to use")
@@ -114,6 +115,9 @@ class TrainingJob(BaseModel):
     # Progress tracking
     progress_percentage: float = Field(0.0, description="Training progress percentage", ge=0.0, le=100.0)
     current_step: Optional[str] = Field(None, description="Current training step")
+    
+    # Celery task tracking
+    celery_task_id: Optional[str] = Field(None, description="Celery background task ID")
     
     # Timestamps
     created_at: datetime = Field(..., description="When the job was created")

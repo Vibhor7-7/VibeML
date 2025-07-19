@@ -3,11 +3,12 @@ Training router for model training endpoints.
 """
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import uuid
 
 from models.experiment_store import get_db, ExperimentStore
 from db_schema.train_config import TrainConfig, TrainingJob, TrainingJobResponse, RetrainConfig
+from scripts.celery_tasks import train_model_task, celery_app
 
 router = APIRouter(prefix="/train", tags=["training"])
 
@@ -15,7 +16,6 @@ router = APIRouter(prefix="/train", tags=["training"])
 @router.post("/start", response_model=TrainingJobResponse)
 async def start_training(
     config: TrainConfig,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """Start a new training job."""
@@ -40,24 +40,45 @@ async def start_training(
             model_id=str(uuid.uuid4())
         )
         
-        # Create training job
+        # Update run status to running
+        exp_store.update_run_status(run.id, 'running')
+        
+        # Prepare training configuration for Celery task
+        training_config = {
+            'run_id': run.id,
+            'dataset_source': config.dataset_source,
+            'dataset_id': config.dataset_id,
+            'dataset_name': getattr(config, 'dataset_name', None),
+            'target_column': config.target_column,
+            'algorithm': config.algorithm.value if config.algorithm.value != 'auto' else None,
+            'test_size': config.test_size,
+            'cv_folds': getattr(config, 'cv_folds', 5),
+            'auto_hyperparameter_tuning': config.auto_hyperparameter_tuning
+        }
+        
+        # Start Celery training task
+        task = train_model_task.delay(training_config)
+        
+        # Update run with Celery task ID
+        run.celery_task_id = task.id
+        db.commit()
+        
+        # Create training job response
         job = TrainingJob(
             job_id=str(run.id),
             model_name=config.model_name,
-            status="pending",
+            status="running",
             algorithm=config.algorithm,
             problem_type=config.problem_type,
             progress_percentage=0.0,
             current_step="Initializing",
-            created_at=run.created_at
+            created_at=run.created_at,
+            celery_task_id=task.id
         )
-        
-        # Add background training task (placeholder)
-        # background_tasks.add_task(train_model_task, run.id, config)
         
         return TrainingJobResponse(
             job=job,
-            message=f"Training job {job.job_id} started successfully"
+            message=f"Training job {job.job_id} started successfully with task ID {task.id}"
         )
         
     except Exception as e:
@@ -74,20 +95,54 @@ async def get_training_status(job_id: str, db: Session = Depends(get_db)):
         if not run:
             raise HTTPException(status_code=404, detail="Training job not found")
         
+        # Check Celery task status if available
+        celery_task_id = getattr(run, 'celery_task_id', None)
+        progress_percentage = 0.0
+        current_step = run.status.title()
+        
+        if celery_task_id:
+            try:
+                # Get task result
+                task_result = celery_app.AsyncResult(celery_task_id)
+                task_state = task_result.state
+                task_info = task_result.info or {}
+                
+                if task_state == 'PENDING':
+                    progress_percentage = 0.0
+                    current_step = "Queued"
+                elif task_state == 'PROGRESS':
+                    progress_percentage = task_info.get('progress', 0.0)
+                    current_step = task_info.get('status', 'Processing')
+                elif task_state == 'SUCCESS':
+                    progress_percentage = 100.0
+                    current_step = "Completed"
+                elif task_state == 'FAILURE':
+                    progress_percentage = 0.0
+                    current_step = "Failed"
+                    
+            except Exception as e:
+                # If can't get Celery status, fall back to DB status
+                current_step = run.status.title()
+                progress_percentage = 100.0 if run.status == "completed" else 0.0
+        else:
+            # No Celery task, use DB status
+            progress_percentage = 100.0 if run.status == "completed" else 0.0
+        
         job = TrainingJob(
             job_id=str(run.id),
             model_name=run.experiment.name,
             status=run.status,
             algorithm=run.algorithm,
             problem_type=run.experiment.problem_type,
-            progress_percentage=100.0 if run.status == "completed" else 0.0,
-            current_step=run.status.title(),
+            progress_percentage=progress_percentage,
+            current_step=current_step,
             created_at=run.created_at,
             started_at=run.started_at,
             completed_at=run.completed_at,
             training_metrics=run.training_metrics,
             validation_metrics=run.validation_metrics,
-            error_message=run.error_message
+            error_message=run.error_message,
+            celery_task_id=celery_task_id
         )
         
         return job
@@ -101,7 +156,6 @@ async def get_training_status(job_id: str, db: Session = Depends(get_db)):
 @router.post("/retrain", response_model=TrainingJobResponse)
 async def retrain_model(
     config: RetrainConfig,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """Retrain an existing model."""
@@ -125,20 +179,43 @@ async def retrain_model(
             model_id=str(uuid.uuid4())
         )
         
+        # Update run status to running
+        exp_store.update_run_status(run.id, 'running')
+        
+        # Prepare retraining configuration for Celery task
+        training_config = {
+            'run_id': run.id,
+            'dataset_source': original_run.experiment.dataset_id.split('_')[0] if '_' in original_run.experiment.dataset_id else 'unknown',
+            'dataset_id': original_run.experiment.dataset_id,
+            'target_column': original_run.experiment.target_column,
+            'algorithm': original_run.algorithm,
+            'test_size': 0.2,  # Default for retraining
+            'cv_folds': 5,
+            'auto_hyperparameter_tuning': True
+        }
+        
+        # Start Celery retraining task
+        task = train_model_task.delay(training_config)
+        
+        # Update run with Celery task ID
+        run.celery_task_id = task.id
+        db.commit()
+        
         job = TrainingJob(
             job_id=str(run.id),
             model_name=f"{original_run.experiment.name}_retrain",
-            status="pending",
+            status="running",
             algorithm=original_run.algorithm,
             problem_type=original_run.experiment.problem_type,
             progress_percentage=0.0,
             current_step="Initializing Retraining",
-            created_at=run.created_at
+            created_at=run.created_at,
+            celery_task_id=task.id
         )
         
         return TrainingJobResponse(
             job=job,
-            message=f"Retraining job {job.job_id} started successfully"
+            message=f"Retraining job {job.job_id} started successfully with task ID {task.id}"
         )
         
     except ValueError:

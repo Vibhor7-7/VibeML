@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Database setup
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./vibeml.db")
+db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'vibeml.db'))
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{db_path}")
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -50,6 +51,9 @@ class Run(Base):
     # Algorithm and configuration
     algorithm = Column(String(100), nullable=False)
     status = Column(String(50), default="pending", nullable=False)  # pending, running, completed, failed
+    
+    # Celery task tracking
+    celery_task_id = Column(String(255), nullable=True, index=True)
     
     # Parameters and results stored as JSON
     hyperparameters = Column(JSON, nullable=True)

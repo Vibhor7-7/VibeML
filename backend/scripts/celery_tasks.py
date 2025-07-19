@@ -1,0 +1,237 @@
+"""
+Celery tasks for background processing in VibeML.
+"""
+from celery import current_task
+from celery_config import celery_app
+import pandas as pd
+import logging
+from typing import Dict, Any
+import traceback
+from datetime import datetime
+import numpy as np
+
+from models.experiment_store import SessionLocal, ExperimentStore
+from services.training_engine import training_engine
+from services.open_ml import openml_service
+from services.kaggle import kaggle_service
+
+logger = logging.getLogger(__name__)
+
+
+@celery_app.task(bind=True)
+def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Background task for model training.
+    
+    Args:
+        config: Training configuration containing dataset info, algorithm, etc.
+    
+    Returns:
+        Dictionary with training results
+    """
+    task_id = self.request.id
+    logger.info(f"Starting training task {task_id} with config: {config}")
+    
+    # Get database session
+    db = SessionLocal()
+    exp_store = ExperimentStore(db)
+    
+    try:
+        # Update task status
+        current_task.update_state(
+            state='PROGRESS',
+            meta={'status': 'Loading dataset', 'progress': 10}
+        )
+        
+        # Load dataset based on source
+        dataset_source = config.get('dataset_source', 'unknown')
+        dataset_id = config.get('dataset_id')
+        
+        if dataset_source == 'openml':
+            # Extract OpenML dataset ID from dataset_id
+            openml_id = int(dataset_id.replace('openml_', ''))
+            df = openml_service.get_dataset(openml_id)
+            logger.info(f"Loaded OpenML dataset {openml_id} with shape {df.shape}")
+        
+        elif dataset_source == 'kaggle':
+            # For Kaggle, we'd need to store the dataset name
+            dataset_name = config.get('dataset_name')
+            df = kaggle_service.download_dataset(dataset_name)
+            logger.info(f"Loaded Kaggle dataset {dataset_name} with shape {df.shape}")
+        
+        elif dataset_source == 'upload':
+            # For uploaded files, load from storage
+            # TODO: Implement file storage and retrieval
+            raise NotImplementedError("File upload training not yet implemented")
+        
+        else:
+            raise ValueError(f"Unknown dataset source: {dataset_source}")
+        
+        # Update progress
+        current_task.update_state(
+            state='PROGRESS',
+            meta={'status': 'Preprocessing data', 'progress': 25}
+        )
+        
+        # Get training parameters
+        target_column = config.get('target_column')
+        algorithm = config.get('algorithm')
+        test_size = config.get('test_size', 0.2)
+        cv_folds = config.get('cv_folds', 5)
+        enable_tuning = config.get('auto_hyperparameter_tuning', True)
+        
+        # Update progress
+        current_task.update_state(
+            state='PROGRESS',
+            meta={'status': 'Training models', 'progress': 50}
+        )
+        
+        # Train the model
+        if algorithm and algorithm != 'auto':
+            # Train specific algorithm
+            training_results = training_engine.auto_train(
+                df=df,
+                target_column=target_column,
+                test_size=test_size,
+                cv_folds=cv_folds,
+                enable_hyperparameter_tuning=enable_tuning,
+                algorithms=[algorithm]
+            )
+        else:
+            # AutoML - try all algorithms
+            training_results = training_engine.auto_train(
+                df=df,
+                target_column=target_column,
+                test_size=test_size,
+                cv_folds=cv_folds,
+                enable_hyperparameter_tuning=enable_tuning
+            )
+        
+        # Update progress
+        current_task.update_state(
+            state='PROGRESS',
+            meta={'status': 'Saving results', 'progress': 90}
+        )
+        
+        # Get the run from database
+        run_id = config.get('run_id')
+        if run_id:
+            # Update run with results
+            exp_store.update_run_status(run_id, 'completed')
+            exp_store.update_run_metrics(
+                run_id,
+                training_metrics=training_results.get('best_test_metrics', {}),
+                validation_metrics={'cv_score': training_results.get('best_cv_score', 0)},
+                test_metrics=training_results.get('best_test_metrics', {})
+            )
+            exp_store.update_run_model_info(
+                run_id,
+                model_path=training_results.get('model_path'),
+                training_duration_seconds=training_results.get('training_duration_seconds'),
+                model_size_bytes=None  # TODO: Calculate model file size
+            )
+            
+            # Update hyperparameters
+            run = exp_store.get_run(run_id)
+            if run:
+                run.hyperparameters = training_results.get('best_hyperparameters', {})
+                run.algorithm = training_results.get('best_algorithm')
+                db.commit()
+        
+        # Final status update
+        current_task.update_state(
+            state='SUCCESS',
+            meta={
+                'status': 'Training completed successfully',
+                'progress': 100,
+                'results': training_results
+            }
+        )
+        
+        logger.info(f"Training task {task_id} completed successfully")
+        return training_results
+        
+    except Exception as e:
+        error_msg = f"Training failed: {str(e)}"
+        logger.error(f"Training task {task_id} failed: {error_msg}")
+        logger.error(traceback.format_exc())
+        
+        # Update run status if run_id is available
+        run_id = config.get('run_id')
+        if run_id:
+            exp_store.update_run_status(run_id, 'failed', error_msg)
+        
+        # Update task status
+        current_task.update_state(
+            state='FAILURE',
+            meta={'status': error_msg, 'progress': 0}
+        )
+        
+        raise Exception(error_msg)
+    
+    finally:
+        db.close()
+
+
+@celery_app.task(bind=True)
+def predict_task(self, model_path: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Background task for making predictions.
+    
+    Args:
+        model_path: Path to the saved model
+        data: Input data for prediction
+    
+    Returns:
+        Dictionary with prediction results
+    """
+    task_id = self.request.id
+    logger.info(f"Starting prediction task {task_id}")
+    
+    try:
+        # Convert data to DataFrame
+        df = pd.DataFrame([data])
+        
+        # Make prediction
+        predictions = training_engine.predict(model_path, df)
+        
+        # Try to get probabilities if available
+        try:
+            probabilities = training_engine.predict_proba(model_path, df)
+            prob_dict = {f'prob_class_{i}': float(prob) for i, prob in enumerate(probabilities[0])}
+        except:
+            prob_dict = {}
+        
+        result = {
+            'prediction': predictions[0].tolist() if hasattr(predictions[0], 'tolist') else predictions[0],
+            'probabilities': prob_dict,
+            'status': 'success'
+        }
+        
+        logger.info(f"Prediction task {task_id} completed successfully")
+        return result
+        
+    except Exception as e:
+        error_msg = f"Prediction failed: {str(e)}"
+        logger.error(f"Prediction task {task_id} failed: {error_msg}")
+        
+        current_task.update_state(
+            state='FAILURE',
+            meta={'status': error_msg}
+        )
+        
+        raise Exception(error_msg)
+
+
+@celery_app.task
+def cleanup_old_models():
+    """Background task to cleanup old model files."""
+    # TODO: Implement model cleanup logic
+    logger.info("Model cleanup task executed")
+    return {"status": "cleanup_completed"}
+
+
+@celery_app.task
+def health_check():
+    """Health check task for Celery worker."""
+    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
