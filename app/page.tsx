@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Upload, Play, Download, Settings, BarChart3, Database, Code, Globe, Target, FileText, Search } from 'lucide-react'
 import Image from 'next/image'
 import DatasetSearch from './components/DatasetSearch'
@@ -18,6 +18,11 @@ export default function Dashboard() {
   const [selectedModel, setSelectedModel] = useState('')
   const [autoMode, setAutoMode] = useState(false)
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
+  const [evaluationData, setEvaluationData] = useState<any>(null)
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
+  const [modelAnalytics, setModelAnalytics] = useState<any>(null)
+  const [availableModels, setAvailableModels] = useState<any[]>([])
+  const [loadingEvaluation, setLoadingEvaluation] = useState(false)
   const [selectedDataset, setSelectedDataset] = useState<any>(null)
   const [targetColumn, setTargetColumn] = useState('')
   const [problemType, setProblemType] = useState('classification')
@@ -190,6 +195,60 @@ export default function Dashboard() {
     console.log('Loading test external dataset...')
     await handleDatasetSelect(testDataset)
   }
+
+  const fetchEvaluationDashboard = async () => {
+    try {
+      setLoadingEvaluation(true)
+      const response = await fetch('http://localhost:8000/api/train/evaluation/dashboard')
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('Evaluation dashboard data:', data)
+        setEvaluationData(data)
+        setAvailableModels(data.models)
+        
+        // Auto-select the best model
+        if (data.best_model) {
+          setSelectedModelId(data.best_model.model_id)
+          await fetchModelAnalytics(data.best_model.model_id)
+        }
+      } else {
+        console.error('Failed to fetch evaluation dashboard:', await response.text())
+      }
+    } catch (error) {
+      console.error('Error fetching evaluation dashboard:', error)
+    } finally {
+      setLoadingEvaluation(false)
+    }
+  }
+
+  const fetchModelAnalytics = async (modelId: string) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/train/evaluation/model/${modelId}/analytics`)
+      
+      if (response.ok) {
+        const analytics = await response.json()
+        console.log('Model analytics:', analytics)
+        setModelAnalytics(analytics)
+      } else {
+        console.error('Failed to fetch model analytics:', await response.text())
+      }
+    } catch (error) {
+      console.error('Error fetching model analytics:', error)
+    }
+  }
+
+  const handleModelSelect = async (modelId: string) => {
+    setSelectedModelId(modelId)
+    await fetchModelAnalytics(modelId)
+  }
+
+  // Load evaluation data when switching to evaluate tab
+  useEffect(() => {
+    if (activeTab === 'evaluate') {
+      fetchEvaluationDashboard()
+    }
+  }, [activeTab])
 
   const handleTrain = async () => {
     try {
@@ -803,13 +862,23 @@ export default function Dashboard() {
 
             {activeTab === 'evaluate' && (
               <>
-                {!selectedDataset && !uploadedFile ? (
+                {loadingEvaluation ? (
+                  <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-12 border border-gray-700 text-center">
+                    <div className="max-w-md mx-auto">
+                      <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-400 mx-auto mb-6"></div>
+                      <h2 className="text-2xl font-semibold text-white mb-4">Loading Model Analytics</h2>
+                      <p className="text-gray-300">
+                        Fetching data from your trained models...
+                      </p>
+                    </div>
+                  </div>
+                ) : !evaluationData || availableModels.length === 0 ? (
                   <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-12 border border-gray-700 text-center">
                     <div className="max-w-md mx-auto">
                       <Target className="w-16 h-16 text-gray-500 mx-auto mb-6" />
-                      <h2 className="text-2xl font-semibold text-white mb-4">Dataset Required</h2>
+                      <h2 className="text-2xl font-semibold text-white mb-4">No Trained Models</h2>
                       <p className="text-gray-300 mb-8">
-                        To evaluate models, you need to first have a dataset and train a model.
+                        To evaluate models, you need to first train a model with a dataset.
                       </p>
                       <div className="flex gap-4 justify-center">
                         <button
@@ -841,283 +910,161 @@ export default function Dashboard() {
                         Explore detailed insights into your trained model's performance and dataset characteristics.
                       </p>
                     </div>
+                    {availableModels.length > 1 && (
+                      <div className="flex items-center gap-3">
+                        <label className="text-gray-300 text-sm">Select Model:</label>
+                        <select
+                          value={selectedModelId || ''}
+                          onChange={(e) => handleModelSelect(e.target.value)}
+                          className="bg-gray-700 border border-gray-600 text-white px-3 py-2 rounded-lg text-sm"
+                        >
+                          {availableModels.map((model) => (
+                            <option key={model.model_id} value={model.model_id}>
+                              {model.model_name} ({model.algorithm})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Performance Metrics */}
-                <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
-                  <h3 className="text-xl font-semibold text-white mb-6">Performance Metrics</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                    <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
-                      <h4 className="text-base font-medium text-white mb-2">Accuracy</h4>
-                      <div className="text-2xl font-bold text-white mb-1">92%</div>
-                      <p className="text-green-400 text-base font-medium">+2%</p>
-                    </div>
-                    <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
-                      <h4 className="text-base font-medium text-white mb-2">Precision</h4>
-                      <div className="text-2xl font-bold text-white mb-1">88%</div>
-                      <p className="text-red-400 text-base font-medium">-1%</p>
-                    </div>
-                    <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
-                      <h4 className="text-base font-medium text-white mb-2">Recall</h4>
-                      <div className="text-2xl font-bold text-white mb-1">90%</div>
-                      <p className="text-green-400 text-base font-medium">+3%</p>
-                    </div>
-                    <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
-                      <h4 className="text-base font-medium text-white mb-2">F1 Score</h4>
-                      <div className="text-2xl font-bold text-white mb-1">89%</div>
-                      <p className="text-green-400 text-base font-medium">+1%</p>
-                    </div>
-                  </div>
-                  
-                  {/* ROC-AUC Score */}
-                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-                    <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
-                      <h4 className="text-base font-medium text-white mb-2">ROC-AUC Score</h4>
-                      <div className="text-2xl font-bold text-white">0.95</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Model Overview */}
-                <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
-                  <h3 className="text-xl font-semibold text-white mb-6">Model Overview</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
-                    <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
-                      <p className="text-gray-400 text-sm">Model Type</p>
-                      <p className="text-white text-sm">Classification</p>
-                    </div>
-                    <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
-                      <p className="text-gray-400 text-sm">Training Time</p>
-                      <p className="text-white text-sm">2 hours 30 minutes</p>
-                    </div>
-                    <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
-                      <p className="text-gray-400 text-sm">Number of Iterations/Epochs</p>
-                      <p className="text-white text-sm">100 epochs</p>
-                    </div>
-                    <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
-                      <p className="text-gray-400 text-sm">Algorithm Used</p>
-                      <p className="text-white text-sm">Gradient Boosting</p>
-                    </div>
-                    <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
-                      <p className="text-gray-400 text-sm">Dataset Name</p>
-                      <p className="text-white text-sm">Customer Retention Dataset</p>
-                    </div>
-                    <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
-                      <p className="text-gray-400 text-sm">Dataset Size</p>
-                      <p className="text-white text-sm">10,000 rows</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Interactive Charts */}
-                <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl border border-gray-700">
-                  <div className="p-6 pb-0">
-                    <h3 className="text-xl font-semibold text-white mb-6">Interactive Charts</h3>
-                  </div>
-                  
-                  {/* Chart Tabs */}
-                  <div className="border-b border-gray-600">
-                    <div className="flex px-6 gap-8">
-                      <button className="flex flex-col items-center justify-center border-b-2 border-blue-400 text-white pb-3 pt-4">
-                        <span className="text-white text-sm font-bold">ROC Curve</span>
-                      </button>
-                      <button className="flex flex-col items-center justify-center border-b-2 border-transparent text-gray-400 pb-3 pt-4 hover:text-white">
-                        <span className="text-gray-400 text-sm font-bold">Precision-Recall</span>
-                      </button>
-                      <button className="flex flex-col items-center justify-center border-b-2 border-transparent text-gray-400 pb-3 pt-4 hover:text-white">
-                        <span className="text-gray-400 text-sm font-bold">Feature Importance</span>
-                      </button>
-                      <button className="flex flex-col items-center justify-center border-b-2 border-transparent text-gray-400 pb-3 pt-4 hover:text-white">
-                        <span className="text-gray-400 text-sm font-bold">Loss vs Epoch</span>
-                      </button>
-                    </div>
-                  </div>
-                  
-                  {/* Chart Content */}
-                  <div className="p-6">
-                    <div className="bg-gray-700/30 rounded-lg p-6 border border-gray-600">
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <h4 className="text-white font-medium mb-1">ROC Curve</h4>
-                          <div className="text-2xl font-bold text-white mb-2">0.95</div>
-                          <div className="flex gap-2 items-center">
-                            <span className="text-gray-300 text-sm">Overall</span>
-                            <span className="text-green-400 text-sm font-medium">+2%</span>
+                {modelAnalytics && (
+                  <>
+                    {/* Performance Metrics */}
+                    <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                      <h3 className="text-xl font-semibold text-white mb-6">Performance Metrics</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                        {modelAnalytics.metrics.accuracy && (
+                          <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                            <h4 className="text-base font-medium text-white mb-2">Accuracy</h4>
+                            <div className="text-2xl font-bold text-white mb-1">
+                              {(modelAnalytics.metrics.accuracy * 100).toFixed(1)}%
+                            </div>
+                            <p className={`text-base font-medium ${
+                              modelAnalytics.metrics.accuracy > 0.9 ? 'text-green-400' : 
+                              modelAnalytics.metrics.accuracy > 0.8 ? 'text-yellow-400' : 'text-red-400'
+                            }`}>
+                              {modelAnalytics.metrics.accuracy > 0.9 ? 'Excellent' : 
+                               modelAnalytics.metrics.accuracy > 0.8 ? 'Good' : 'Needs Improvement'}
+                            </p>
                           </div>
-                        </div>
+                        )}
+                        {modelAnalytics.metrics.precision && (
+                          <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                            <h4 className="text-base font-medium text-white mb-2">Precision</h4>
+                            <div className="text-2xl font-bold text-white mb-1">
+                              {(modelAnalytics.metrics.precision * 100).toFixed(1)}%
+                            </div>
+                            <p className="text-gray-400 text-base font-medium">Classification</p>
+                          </div>
+                        )}
+                        {modelAnalytics.metrics.recall && (
+                          <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                            <h4 className="text-base font-medium text-white mb-2">Recall</h4>
+                            <div className="text-2xl font-bold text-white mb-1">
+                              {(modelAnalytics.metrics.recall * 100).toFixed(1)}%
+                            </div>
+                            <p className="text-gray-400 text-base font-medium">Sensitivity</p>
+                          </div>
+                        )}
+                        {modelAnalytics.metrics.f1_score && (
+                          <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                            <h4 className="text-base font-medium text-white mb-2">F1 Score</h4>
+                            <div className="text-2xl font-bold text-white mb-1">
+                              {(modelAnalytics.metrics.f1_score * 100).toFixed(1)}%
+                            </div>
+                            <p className="text-gray-400 text-base font-medium">Harmonic Mean</p>
+                          </div>
+                        )}
                       </div>
                       
-                      {/* Placeholder Chart */}
-                      <div className="h-48 bg-gray-800/50 rounded-lg border border-gray-600 flex items-center justify-center relative overflow-hidden">
-                        {/* Simple SVG curve simulation */}
-                        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 200">
-                          <defs>
-                            <linearGradient id="rocGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                              <stop offset="0%" stopColor="rgb(59, 130, 246)" stopOpacity="0.3"/>
-                              <stop offset="100%" stopColor="rgb(59, 130, 246)" stopOpacity="0.1"/>
-                            </linearGradient>
-                          </defs>
-                          <path
-                            d="M 20 180 Q 100 160 200 100 T 380 20"
-                            stroke="rgb(59, 130, 246)"
-                            strokeWidth="2"
-                            fill="none"
-                          />
-                          <path
-                            d="M 20 180 Q 100 160 200 100 T 380 20 L 380 180 L 20 180 Z"
-                            fill="url(#rocGradient)"
-                          />
-                        </svg>
-                        <div className="absolute bottom-2 left-0 right-0 flex justify-between px-4 text-xs text-gray-400">
-                          <span>0.0</span>
-                          <span>0.2</span>
-                          <span>0.4</span>
-                          <span>0.6</span>
-                          <span>0.8</span>
-                          <span>1.0</span>
+                      {/* Additional Metrics */}
+                      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                        {modelAnalytics.training_details.cv_score && (
+                          <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                            <h4 className="text-base font-medium text-white mb-2">CV Score</h4>
+                            <div className="text-2xl font-bold text-white">
+                              {(modelAnalytics.training_details.cv_score * 100).toFixed(1)}%
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Model Overview */}
+                    <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                      <h3 className="text-xl font-semibold text-white mb-6">Model Overview</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
+                        <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
+                          <p className="text-gray-400 text-sm">Model Type</p>
+                          <p className="text-white text-sm capitalize">{modelAnalytics.dataset_info.problem_type}</p>
+                        </div>
+                        <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
+                          <p className="text-gray-400 text-sm">Training Time</p>
+                          <p className="text-white text-sm">
+                            {modelAnalytics.model_info.training_duration ? 
+                              `${modelAnalytics.model_info.training_duration.toFixed(2)} seconds` : 
+                              'N/A'}
+                          </p>
+                        </div>
+                        <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
+                          <p className="text-gray-400 text-sm">Algorithm Used</p>
+                          <p className="text-white text-sm">{modelAnalytics.model_info.algorithm.replace('_', ' ').toUpperCase()}</p>
+                        </div>
+                        <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
+                          <p className="text-gray-400 text-sm">Dataset Name</p>
+                          <p className="text-white text-sm">{modelAnalytics.dataset_info.name}</p>
+                        </div>
+                        <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
+                          <p className="text-gray-400 text-sm">Target Column</p>
+                          <p className="text-white text-sm">{modelAnalytics.dataset_info.target}</p>
+                        </div>
+                        <div className="flex flex-col gap-1 border-t border-gray-600 py-4">
+                          <p className="text-gray-400 text-sm">Features Count</p>
+                          <p className="text-white text-sm">{modelAnalytics.dataset_info.features || 'N/A'}</p>
                         </div>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* Dataset Summary */}
-                <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
-                  <h3 className="text-xl font-semibold text-white mb-4">Dataset Summary</h3>
-                  <p className="text-white text-base mb-6">Key insights about the dataset used for training:</p>
-                  
-                  <div className="space-y-4">
-                    <div className="bg-gray-700/30 p-4 rounded-lg border border-gray-600">
-                      <h4 className="text-white font-medium mb-1">Null Values</h4>
-                      <p className="text-gray-300 text-sm">
-                        15% of the dataset contains missing values, primarily in the 'Age' and 'Income' columns.
-                      </p>
-                    </div>
-                    <div className="bg-gray-700/30 p-4 rounded-lg border border-gray-600">
-                      <h4 className="text-white font-medium mb-1">Dominant Class</h4>
-                      <p className="text-gray-300 text-sm">
-                        The 'Retention' class is the dominant class, representing 70% of the dataset.
-                      </p>
-                    </div>
-                    <div className="bg-gray-700/30 p-4 rounded-lg border border-gray-600">
-                      <h4 className="text-white font-medium mb-1">Class Imbalance</h4>
-                      <p className="text-gray-300 text-sm">
-                        The dataset exhibits a moderate class imbalance, with a ratio of approximately 2:1 between the 'Retention' and 'No Retention' classes.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Distribution Charts */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                    <div className="bg-gray-700/30 p-6 rounded-lg border border-gray-600">
-                      <h4 className="text-white font-medium mb-2">Distribution of Categorical Variable A</h4>
-                      <div className="text-2xl font-bold text-white mb-2">60%</div>
-                      <div className="flex gap-2 items-center mb-4">
-                        <span className="text-gray-300 text-sm">Overall</span>
-                        <span className="text-green-400 text-sm font-medium">+5%</span>
-                      </div>
-                      
-                      {/* Bar Chart */}
-                      <div className="h-32 flex items-end justify-center gap-4">
-                        <div className="flex flex-col items-center">
-                          <div className="w-12 bg-blue-500 border-t-2 border-blue-400" style={{height: '60%'}}></div>
-                          <span className="text-xs text-gray-400 mt-2">Category 1</span>
-                        </div>
-                        <div className="flex flex-col items-center">
-                          <div className="w-12 bg-blue-500 border-t-2 border-blue-400" style={{height: '40%'}}></div>
-                          <span className="text-xs text-gray-400 mt-2">Category 2</span>
+                    {/* Model Insights */}
+                    {modelAnalytics.insights && modelAnalytics.insights.length > 0 && (
+                      <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                        <h3 className="text-xl font-semibold text-white mb-4">Model Insights</h3>
+                        <div className="space-y-3">
+                          {modelAnalytics.insights.map((insight: string, index: number) => (
+                            <div key={index} className="bg-gray-700/30 p-4 rounded-lg border border-gray-600">
+                              <p className="text-gray-300 text-sm">{insight}</p>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    </div>
-                    
-                    <div className="bg-gray-700/30 p-6 rounded-lg border border-gray-600">
-                      <h4 className="text-white font-medium mb-2">Distribution of Categorical Variable B</h4>
-                      <div className="text-2xl font-bold text-white mb-2">40%</div>
-                      <div className="flex gap-2 items-center mb-4">
-                        <span className="text-gray-300 text-sm">Overall</span>
-                        <span className="text-red-400 text-sm font-medium">-5%</span>
-                      </div>
-                      
-                      {/* Bar Chart */}
-                      <div className="h-32 flex items-end justify-center gap-4">
-                        <div className="flex flex-col items-center">
-                          <div className="w-8 bg-purple-500 border-t-2 border-purple-400" style={{height: '80%'}}></div>
-                          <span className="text-xs text-gray-400 mt-2">A</span>
-                        </div>
-                        <div className="flex flex-col items-center">
-                          <div className="w-8 bg-purple-500 border-t-2 border-purple-400" style={{height: '50%'}}></div>
-                          <span className="text-xs text-gray-400 mt-2">B</span>
-                        </div>
-                        <div className="flex flex-col items-center">
-                          <div className="w-8 bg-purple-500 border-t-2 border-purple-400" style={{height: '100%'}}></div>
-                          <span className="text-xs text-gray-400 mt-2">C</span>
+                    )}
+
+                    {/* Feature Importance */}
+                    {modelAnalytics.feature_importance && modelAnalytics.feature_importance.length > 0 && (
+                      <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
+                        <h3 className="text-xl font-semibold text-white mb-6">Feature Importance</h3>
+                        <div className="space-y-3">
+                          {modelAnalytics.feature_importance.slice(0, 8).map((feature: any, index: number) => (
+                            <div key={index} className="flex items-center justify-between">
+                              <span className="text-white text-sm">{feature.feature}</span>
+                              <div className="flex items-center gap-3 flex-1 max-w-xs">
+                                <div className="bg-gray-700 rounded-full h-2 flex-1">
+                                  <div 
+                                    className="bg-purple-500 h-2 rounded-full" 
+                                    style={{ width: `${(feature.importance * 100)}%` }}
+                                  ></div>
+                                </div>
+                                <span className="text-gray-300 text-sm min-w-12">{(feature.importance * 100).toFixed(1)}%</span>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Model Retraining */}
-                <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
-                  <h3 className="text-xl font-semibold text-white mb-4">Model Retraining (Optional)</h3>
-                  <p className="text-white text-base mb-6">
-                    Recommended improvements: Optimize hyperparameters for better performance.
-                  </p>
-                  
-                  <div className="mb-6">
-                    <button className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-all font-medium">
-                      Retrain with optimized hyperparameters
-                    </button>
-                  </div>
-
-                  {/* Configuration Table */}
-                  <div className="overflow-hidden rounded-lg border border-gray-600">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="bg-gray-700/50">
-                          <th className="px-4 py-3 text-left text-white text-sm font-medium">Configuration</th>
-                          <th className="px-4 py-3 text-left text-white text-sm font-medium">Hyperparameter A</th>
-                          <th className="px-4 py-3 text-left text-white text-sm font-medium">Hyperparameter B</th>
-                          <th className="px-4 py-3 text-left text-white text-sm font-medium">Result</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="border-t border-gray-600">
-                          <td className="px-4 py-3 text-white text-sm">Config 1</td>
-                          <td className="px-4 py-3 text-gray-300 text-sm">Value 1</td>
-                          <td className="px-4 py-3 text-gray-300 text-sm">Value 2</td>
-                          <td className="px-4 py-3 text-gray-300 text-sm">90%</td>
-                        </tr>
-                        <tr className="border-t border-gray-600">
-                          <td className="px-4 py-3 text-white text-sm">Config 2</td>
-                          <td className="px-4 py-3 text-gray-300 text-sm">Value 3</td>
-                          <td className="px-4 py-3 text-gray-300 text-sm">Value 4</td>
-                          <td className="px-4 py-3 text-gray-300 text-sm">91%</td>
-                        </tr>
-                        <tr className="border-t border-gray-600">
-                          <td className="px-4 py-3 text-white text-sm">Config 3</td>
-                          <td className="px-4 py-3 text-gray-300 text-sm">Value 5</td>
-                          <td className="px-4 py-3 text-gray-300 text-sm">Value 6</td>
-                          <td className="px-4 py-3 text-gray-300 text-sm">92%</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Export & Share */}
-                <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
-                  <h3 className="text-xl font-semibold text-white mb-6">Export & Share</h3>
-                  <div className="flex gap-4">
-                    <button className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700 transition-all font-medium">
-                      Download PDF Report
-                    </button>
-                    <button className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700 transition-all font-medium">
-                      Share Dashboard
-                    </button>
-                  </div>
-                </div>
+                    )}
+                  </>
+                )}
               </div>
                 )}
               </>

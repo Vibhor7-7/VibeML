@@ -773,6 +773,9 @@ video {
 .w-full {
   width: 100%;
 }
+.min-w-12 {
+  min-width: 3rem;
+}
 .max-w-4xl {
   max-width: 56rem;
 }
@@ -781,6 +784,9 @@ video {
 }
 .max-w-md {
   max-width: 28rem;
+}
+.max-w-xs {
+  max-width: 20rem;
 }
 .flex-1 {
   flex: 1 1 0%;
@@ -1470,6 +1476,10 @@ video {
 .text-yellow-800 {
   --tw-text-opacity: 1;
   color: rgb(133 77 14 / var(--tw-text-opacity, 1));
+}
+.text-yellow-400 {
+  --tw-text-opacity: 1;
+  color: rgb(250 204 21 / var(--tw-text-opacity, 1));
 }
 .placeholder-gray-400::-moz-placeholder {
   --tw-placeholder-opacity: 1;

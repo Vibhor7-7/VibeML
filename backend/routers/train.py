@@ -425,6 +425,178 @@ async def analyze_experiment_performance(
         raise HTTPException(status_code=500, detail=f"Failed to analyze experiment: {str(e)}")
 
 
+@router.get("/evaluation/model/{model_id}/analytics")
+async def get_model_analytics(model_id: str, db: Session = Depends(get_db)):
+    """Get detailed analytics for a specific model."""
+    try:
+        exp_store = ExperimentStore(db)
+        run = exp_store.get_run(int(model_id))
+        
+        if not run:
+            raise HTTPException(status_code=404, detail="Model not found")
+        
+        if run.status != "completed":
+            raise HTTPException(status_code=400, detail="Model training not completed")
+        
+        experiment = exp_store.get_experiment(run.experiment_id)
+        
+        # Get metrics
+        training_metrics = run.training_metrics or {}
+        validation_metrics = run.validation_metrics or {}
+        test_metrics = run.test_metrics or {}
+        
+        # Combine all metrics for display
+        all_metrics = {**training_metrics, **validation_metrics, **test_metrics}
+        
+        # Calculate performance insights
+        insights = []
+        
+        if all_metrics.get("accuracy"):
+            acc = all_metrics["accuracy"]
+            if acc >= 0.95:
+                insights.append("Excellent accuracy - model performs very well")
+            elif acc >= 0.85:
+                insights.append("Good accuracy - model shows strong performance")
+            elif acc >= 0.75:
+                insights.append("Moderate accuracy - consider feature engineering")
+            else:
+                insights.append("Low accuracy - model needs improvement")
+        
+        if all_metrics.get("precision") and all_metrics.get("recall"):
+            prec = all_metrics["precision"]
+            rec = all_metrics["recall"]
+            if abs(prec - rec) > 0.1:
+                insights.append("Imbalanced precision/recall - check class distribution")
+        
+        # Get dataset info
+        dataset_info = {
+            "name": experiment.dataset_id,
+            "size": run.dataset_size or 0,
+            "features": run.feature_count or 0,
+            "target": experiment.target_column,
+            "problem_type": experiment.problem_type
+        }
+        
+        # Feature importance (mock for now, would need actual model introspection)
+        feature_importance = []
+        if run.feature_count:
+            # Generate mock feature importance based on dataset
+            feature_names = [f"feature_{i+1}" for i in range(min(run.feature_count, 10))]
+            if experiment.dataset_id == "test_iris":
+                feature_names = ["sepal_length", "sepal_width", "petal_length", "petal_width"]
+            elif experiment.dataset_id == "61":  # OpenML Iris
+                feature_names = ["sepallength", "sepalwidth", "petallength", "petalwidth"]
+            elif experiment.dataset_id == "test_housing":
+                feature_names = ["median_income", "total_rooms", "housing_median_age", "latitude", "longitude"]
+            
+            import random
+            random.seed(42)  # Consistent mock data
+            for i, name in enumerate(feature_names[:min(10, len(feature_names))]):
+                importance = random.uniform(0.05, 0.95)
+                feature_importance.append({"feature": name, "importance": round(importance, 3)})
+            
+            feature_importance.sort(key=lambda x: x["importance"], reverse=True)
+        
+        return {
+            "model_info": {
+                "model_id": model_id,
+                "name": experiment.name,
+                "algorithm": run.algorithm,
+                "status": run.status,
+                "created_at": run.created_at.isoformat() if run.created_at else None,
+                "training_duration": run.training_duration_seconds or 0
+            },
+            "metrics": {
+                "accuracy": all_metrics.get("accuracy"),
+                "precision": all_metrics.get("precision"),
+                "recall": all_metrics.get("recall"),
+                "f1_score": all_metrics.get("f1_score"),
+                "roc_auc": all_metrics.get("roc_auc"),
+                "r2_score": all_metrics.get("r2_score"),
+                "mse": all_metrics.get("mse"),
+                "mae": all_metrics.get("mae")
+            },
+            "dataset_info": dataset_info,
+            "feature_importance": feature_importance,
+            "hyperparameters": run.hyperparameters or {},
+            "insights": insights,
+            "training_details": {
+                "cv_score": validation_metrics.get("cv_score"),
+                "training_score": training_metrics.get("score"),
+                "test_score": test_metrics.get("accuracy") or test_metrics.get("score"),
+                "overfitting_risk": "Low" if validation_metrics.get("cv_score", 0) > 0.8 else "Medium"
+            }
+        }
+        
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid model ID")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get model analytics: {str(e)}")
+
+
+@router.get("/evaluation/dashboard")
+async def get_evaluation_dashboard(db: Session = Depends(get_db)):
+    """Get dashboard data for model evaluation page."""
+    try:
+        exp_store = ExperimentStore(db)
+        
+        # Get all completed models
+        experiments = exp_store.get_experiments()
+        completed_models = []
+        
+        for experiment in experiments:
+            runs = exp_store.get_runs_by_experiment(experiment.id)
+            completed_runs = [r for r in runs if r.status == "completed"]
+            
+            for run in completed_runs:
+                if run.validation_metrics or run.test_metrics:
+                    # Get the primary metrics
+                    metrics = run.test_metrics or run.validation_metrics or {}
+                    model_info = {
+                        "model_id": str(run.id),
+                        "model_name": experiment.name,
+                        "algorithm": run.algorithm,
+                        "problem_type": experiment.problem_type,
+                        "target_column": experiment.target_column,
+                        "dataset_name": experiment.dataset_id,
+                        "training_duration": run.training_duration_seconds,
+                        "created_at": run.created_at.isoformat() if run.created_at else None,
+                        "dataset_size": run.dataset_size,
+                        "feature_count": run.feature_count,
+                        "metrics": metrics,
+                        "hyperparameters": run.hyperparameters or {}
+                    }
+                    completed_models.append(model_info)
+        
+        # Sort by creation date (most recent first)
+        completed_models.sort(key=lambda x: x["created_at"] or "0", reverse=True)
+        
+        # Get the best model (highest accuracy/score)
+        best_model = None
+        if completed_models:
+            # Find model with highest accuracy, f1_score, or first metric available
+            for model in completed_models:
+                metrics = model["metrics"]
+                score = metrics.get("accuracy") or metrics.get("f1_score") or metrics.get("r2_score") or 0
+                if best_model is None or score > (best_model["metrics"].get("accuracy", 0) or best_model["metrics"].get("f1_score", 0) or best_model["metrics"].get("r2_score", 0)):
+                    best_model = model
+        
+        return {
+            "models": completed_models,
+            "total_models": len(completed_models),
+            "best_model": best_model,
+            "summary": {
+                "total_experiments": len(experiments),
+                "completed_models": len(completed_models),
+                "problem_types": list(set([m["problem_type"] for m in completed_models])),
+                "algorithms_used": list(set([m["algorithm"] for m in completed_models]))
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get evaluation dashboard: {str(e)}")
+
+
 @router.get("/jobs")
 async def list_training_jobs(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """List all training jobs."""
