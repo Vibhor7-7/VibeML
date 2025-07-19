@@ -137,20 +137,36 @@ class KaggleService:
             cmd = ['kaggle', 'datasets', 'list', '-s', query, '--max-size', str(max_results)]
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             
-            # Parse the output (simplified - Kaggle CLI returns tabular data)
+            # Parse the output (Kaggle CLI returns tabular data)
             lines = result.stdout.strip().split('\n')
-            if len(lines) < 2:
+            if len(lines) < 3:  # Need at least header, separator, and one data line
                 return {"datasets": [], "total": 0}
             
             datasets = []
-            for line in lines[1:]:  # Skip header
-                if line.strip():
-                    parts = line.split()
+            # Skip header line (index 0) and separator line (index 1 with dashes)
+            for line in lines[2:]:  
+                if line.strip() and not line.startswith('-'):
+                    # Split by multiple spaces to handle the tabular format better
+                    parts = [p.strip() for p in line.split() if p.strip()]
                     if len(parts) >= 2:
+                        # First part is the dataset ref (owner/dataset-name)
+                        dataset_ref = parts[0]
+                        # Join the rest as title, but exclude size and other metadata
+                        # Find where the numeric data starts (size, download count, etc.)
+                        title_parts = []
+                        for i, part in enumerate(parts[1:], 1):
+                            # If we hit a number or date-like pattern, stop collecting title
+                            if part.isdigit() or 'T' in part or '-' in part:
+                                break
+                            title_parts.append(part)
+                        
+                        title = " ".join(title_parts) if title_parts else parts[1]
+                        
                         datasets.append({
-                            "name": parts[0],
-                            "title": " ".join(parts[1:]),
-                            "url": f"https://www.kaggle.com/datasets/{parts[0]}"
+                            "name": dataset_ref,
+                            "title": title,
+                            "url": f"https://www.kaggle.com/datasets/{dataset_ref}",
+                            "source": "kaggle"
                         })
             
             return {
@@ -161,11 +177,13 @@ class KaggleService:
             
         except subprocess.CalledProcessError as e:
             logger.error(f"Kaggle search error: {e.stderr}")
-            raise ValueError(f"Failed to search Kaggle datasets: {e.stderr}")
+            # Return empty results instead of raising error for better UX
+            return {"datasets": [], "total": 0, "error": f"Search failed: {e.stderr}"}
         
         except Exception as e:
             logger.error(f"Error searching Kaggle datasets: {str(e)}")
-            raise
+            # Return empty results instead of raising error for better UX
+            return {"datasets": [], "total": 0, "error": str(e)}
     
     def get_dataset_info(self, dataset_name: str) -> Dict[str, Any]:
         """
