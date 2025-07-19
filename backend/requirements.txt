@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+pandas
+scikit-learn
+openml
+kaggle
+sqlalchemy
+celery[redis]
+python-multipart
+aiofiles
+redis
+python-dotenv 
