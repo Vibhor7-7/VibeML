@@ -19,11 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 def safe_update_status(run_id, status, error_message=None):
-    """Safely update run status with error handling and retry logic to prevent MemoryError crashes."""
+    """Safely update run status with error handling and retry logic to prevent database locking issues."""
     if not run_id:
         return
     
-    max_retries = 3
+    max_retries = 5  # Increased retries
     for attempt in range(max_retries):
         session = None
         try:
@@ -37,8 +37,11 @@ def safe_update_status(run_id, status, error_message=None):
             return
         except Exception as e:
             if session:
-                session.rollback()
-                session.close()
+                try:
+                    session.rollback()
+                    session.close()
+                except:
+                    pass  # Ignore errors when closing
             
             logger.warning(f"Attempt {attempt + 1} failed to update status for run {run_id}: {e}")
             
@@ -46,8 +49,12 @@ def safe_update_status(run_id, status, error_message=None):
                 logger.error(f"Failed to update status for run {run_id} after {max_retries} attempts: {e}")
                 return  # Don't raise - continue execution even if DB update fails
             
-            # Exponential backoff
+            # Exponential backoff with jitter
             import time
+            import random
+            base_delay = 0.5 * (2 ** attempt)
+            jitter = random.uniform(0.1, 0.3)  # Add randomness to prevent thundering herd
+            time.sleep(base_delay + jitter)
             time.sleep(0.1 * (2 ** attempt))
 
 
@@ -56,7 +63,7 @@ def safe_update_metrics(run_id, training_results):
     if not run_id:
         return
     
-    max_retries = 3
+    max_retries = 5  # Increased retries
     for attempt in range(max_retries):
         session = None
         try:
@@ -80,8 +87,11 @@ def safe_update_metrics(run_id, training_results):
             return
         except Exception as e:
             if session:
-                session.rollback()
-                session.close()
+                try:
+                    session.rollback()
+                    session.close()
+                except:
+                    pass  # Ignore errors when closing
             
             logger.warning(f"Attempt {attempt + 1} failed to update metrics for run {run_id}: {e}")
             
@@ -89,9 +99,12 @@ def safe_update_metrics(run_id, training_results):
                 logger.error(f"Failed to update metrics for run {run_id} after {max_retries} attempts: {e}")
                 return  # Don't raise - continue execution
             
-            # Exponential backoff
+            # Exponential backoff with jitter
             import time
-            time.sleep(0.1 * (2 ** attempt))
+            import random
+            base_delay = 0.5 * (2 ** attempt)
+            jitter = random.uniform(0.1, 0.3)
+            time.sleep(base_delay + jitter)
 
 
 @celery_app.task(bind=True)
@@ -119,7 +132,7 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"Starting training for run_id: {run_id}")
         
         # Update task status
-        current_task.update_state(
+        self.update_state(
             state='PROGRESS',
             meta={'status': 'Loading dataset', 'progress': 10}
         )
@@ -200,7 +213,7 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError(f"Unknown dataset source: {dataset_source}")
         
         # Update progress
-        current_task.update_state(
+        self.update_state(
             state='PROGRESS',
             meta={'status': 'Preprocessing data', 'progress': 25}
         )
@@ -213,7 +226,7 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
         enable_tuning = config.get('auto_hyperparameter_tuning', True)
         
         # Update progress
-        current_task.update_state(
+        self.update_state(
             state='PROGRESS',
             meta={'status': 'Training models', 'progress': 50}
         )
@@ -240,7 +253,7 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
             )
         
         # Update progress
-        current_task.update_state(
+        self.update_state(
             state='PROGRESS',
             meta={'status': 'Saving results', 'progress': 90}
         )
@@ -254,7 +267,7 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"Training completed successfully for run_id: {run_id}")
         
         # Final status update
-        current_task.update_state(
+        self.update_state(
             state='SUCCESS',
             meta={
                 'status': 'Training completed successfully',
@@ -284,7 +297,7 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
         logger.error(f"Training failed for run_id: {run_id} - {error_msg}")
         
         # Update task status
-        current_task.update_state(
+        self.update_state(
             state='FAILURE',
             meta={'status': error_msg, 'progress': 0}
         )
@@ -337,7 +350,7 @@ def predict_task(self, model_path: str, data: Dict[str, Any]) -> Dict[str, Any]:
         error_msg = f"Prediction failed: {str(e)}"
         logger.error(f"Prediction task {task_id} failed: {error_msg}")
         
-        current_task.update_state(
+        self.update_state(
             state='FAILURE',
             meta={'status': error_msg}
         )

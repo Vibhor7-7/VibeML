@@ -218,6 +218,8 @@ async def search_datasets(
                 all_datasets.extend(kaggle_results.get("datasets", []))
             except Exception as e:
                 # Log error but continue with other sources
+                import logging
+                logging.getLogger(__name__).error(f"Kaggle search failed: {str(e)}")
                 pass
         
         if request.source in ["all", "openml"]:
@@ -230,6 +232,8 @@ async def search_datasets(
                 all_datasets.extend(openml_results.get("datasets", []))
             except Exception as e:
                 # Log error but continue with other sources
+                import logging
+                logging.getLogger(__name__).error(f"OpenML search failed: {str(e)}")
                 pass
         
         # Limit results

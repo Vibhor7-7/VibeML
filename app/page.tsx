@@ -362,8 +362,53 @@ export default function Dashboard() {
       
     } catch (error) {
       console.error('Training error:', error)
-      setLogs(prev => [...prev, `Error: ${error.message}`])
+      const errorMessage = error instanceof Error ? error.message : 
+                          typeof error === 'string' ? error : 
+                          'An unexpected error occurred during training'
+      setLogs(prev => [...prev, `Error: ${errorMessage}`])
       setIsTraining(false)
+    }
+  }
+
+  const handleClearModels = async () => {
+    if (window.confirm('Are you sure you want to clear all trained models and experiments? This action cannot be undone.')) {
+      try {
+        setLogs(prev => [...prev, 'Clearing all models and experiments...'])
+        
+        const response = await fetch('http://localhost:8000/api/train/clear', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        })
+        
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.detail || 'Failed to clear models')
+        }
+        
+        const result = await response.json()
+        setLogs(prev => [...prev, `✅ ${result.message}`])
+        setLogs(prev => [...prev, `Deleted ${result.deleted_experiments} experiments, ${result.deleted_runs} runs, and ${result.deleted_model_files} model files`])
+        
+        // Clear frontend state
+        setEvaluationData(null)
+        setModelAnalytics(null)
+        setSelectedModelId(null)
+        setAvailableModels([])
+        
+        // Refresh evaluation data to reflect the cleared state
+        if (activeTab === 'evaluate') {
+          fetchEvaluationDashboard()
+        }
+        
+      } catch (error) {
+        console.error('Clear models error:', error)
+        const errorMessage = error instanceof Error ? error.message : 
+                            typeof error === 'string' ? error : 
+                            'Failed to clear models'
+        setLogs(prev => [...prev, `Error: ${errorMessage}`])
+      }
     }
   }
 
@@ -837,6 +882,19 @@ export default function Dashboard() {
                           }`}
                         >
                           {isTraining ? 'Training in Progress...' : 'Start Training'}
+                        </button>
+                        
+                        {/* Clear Models Button */}
+                        <button
+                          onClick={handleClearModels}
+                          disabled={isTraining}
+                          className={`w-full mt-3 px-6 py-3 rounded-lg font-medium transition-all ${
+                            isTraining
+                              ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                              : 'bg-gradient-to-r from-red-600 to-red-700 text-white hover:from-red-700 hover:to-red-800'
+                          }`}
+                        >
+                          Clear All Models
                         </button>
                       </div>
                     </div>

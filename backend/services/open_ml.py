@@ -64,7 +64,7 @@ class OpenMLService:
         Search for datasets on OpenML.
         
         Args:
-            query: Search query (searches in name and description)
+            query: Search query (searches in name)
             max_results: Maximum number of results to return
             **filters: Additional filters (e.g., number_instances, number_features)
         
@@ -74,7 +74,7 @@ class OpenMLService:
         try:
             # Build search criteria
             search_kwargs = {
-                'size': max_results,
+                'size': max(max_results * 20, 200),  # Get even more datasets to search through
                 'output_format': 'dataframe'
             }
             
@@ -90,26 +90,23 @@ class OpenMLService:
             if datasets_df is None or datasets_df.empty:
                 return {"datasets": [], "total": 0, "query": query}
             
-            # Filter by query if provided
+            # Filter by query if provided (only search in name since description is not available)
             if query:
-                mask = (
-                    datasets_df['name'].str.contains(query, case=False, na=False) |
-                    datasets_df['description'].str.contains(query, case=False, na=False)
-                )
+                mask = datasets_df['name'].str.contains(query, case=False, na=False)
                 datasets_df = datasets_df[mask]
             
             # Convert to list of dictionaries
             datasets = []
             for _, row in datasets_df.head(max_results).iterrows():
                 dataset_info = {
-                    "id": int(row.name),  # Index is the dataset ID
+                    "id": int(row.get('did')),  # Use 'did' column for dataset ID
                     "name": row.get('name', 'Unknown'),
-                    "description": row.get('description', '')[:200] + '...' if len(str(row.get('description', ''))) > 200 else row.get('description', ''),
+                    "description": f"OpenML Dataset (ID: {row.get('did')}) - {row.get('NumberOfInstances', 0)} instances, {row.get('NumberOfFeatures', 0)} features",
                     "instances": int(row.get('NumberOfInstances', 0)),
                     "features": int(row.get('NumberOfFeatures', 0)),
                     "classes": int(row.get('NumberOfClasses', 0)) if pd.notna(row.get('NumberOfClasses')) else None,
                     "missing_values": bool(row.get('NumberOfMissingValues', 0) > 0),
-                    "url": f"https://www.openml.org/d/{int(row.name)}",
+                    "url": f"https://www.openml.org/d/{int(row.get('did'))}",
                     "source": "openml"
                 }
                 datasets.append(dataset_info)

@@ -628,3 +628,51 @@ async def list_training_jobs(skip: int = 0, limit: int = 100, db: Session = Depe
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list training jobs: {str(e)}")
+
+
+@router.delete("/clear")
+async def clear_all_models(db: Session = Depends(get_db)):
+    """Clear all trained models, experiments, and cached data."""
+    try:
+        import os
+        import glob
+        from models.experiment_store import Experiment, Run, Hyperparameter
+        
+        # Count models before deletion
+        experiments = db.query(Experiment).all()
+        total_experiments = len(experiments)
+        total_runs = sum(len(exp.runs) for exp in experiments)
+        
+        # Delete all hyperparameters first (foreign key constraint)
+        db.query(Hyperparameter).delete()
+        
+        # Delete all runs
+        db.query(Run).delete()
+        
+        # Delete all experiments
+        db.query(Experiment).delete()
+        
+        db.commit()
+        
+        # Clear model storage directory
+        model_storage_path = os.path.join(os.path.dirname(__file__), '..', '..', 'model_storage')
+        deleted_files = 0
+        if os.path.exists(model_storage_path):
+            model_files = glob.glob(os.path.join(model_storage_path, '*.pkl'))
+            for model_file in model_files:
+                try:
+                    os.remove(model_file)
+                    deleted_files += 1
+                except Exception as e:
+                    print(f"Warning: Could not delete {model_file}: {e}")
+        
+        return {
+            "message": "All models and experiments cleared successfully",
+            "deleted_experiments": total_experiments,
+            "deleted_runs": total_runs,
+            "deleted_model_files": deleted_files
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to clear models: {str(e)}")

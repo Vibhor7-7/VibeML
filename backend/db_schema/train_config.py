@@ -9,6 +9,7 @@ from enum import Enum
 
 class MLAlgorithm(str, Enum):
     """Supported ML algorithms."""
+    AUTO = "auto"  # AutoML - automatically select best algorithm
     LINEAR_REGRESSION = "linear_regression"
     LOGISTIC_REGRESSION = "logistic_regression"
     RANDOM_FOREST = "random_forest"

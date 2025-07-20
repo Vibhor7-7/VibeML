@@ -22,9 +22,11 @@ engine = create_engine(
     echo=False,
     pool_pre_ping=True,
     pool_recycle=300,
+    pool_size=10,  # Connection pool size
+    max_overflow=20,  # Additional connections beyond pool_size
     connect_args={
         "check_same_thread": False,
-        "timeout": 30,
+        "timeout": 60,  # Increased timeout
         "isolation_level": None  # Use autocommit mode for better concurrency
     } if "sqlite" in DATABASE_URL else {}
 )
@@ -39,14 +41,18 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor.execute("PRAGMA journal_mode=WAL")
         # Set synchronous mode to NORMAL (faster than FULL, safer than OFF)
         cursor.execute("PRAGMA synchronous=NORMAL")
-        # Increase cache size (default is 2000 pages, we set to 10000)
-        cursor.execute("PRAGMA cache_size=10000")
+        # Increase cache size (default is 2000 pages, we set to 20000)
+        cursor.execute("PRAGMA cache_size=20000")
         # Store temporary tables and indices in memory
         cursor.execute("PRAGMA temp_store=MEMORY")
-        # Set timeout for busy database (30 seconds)
-        cursor.execute("PRAGMA busy_timeout=30000")
+        # Set timeout for busy database (60 seconds)
+        cursor.execute("PRAGMA busy_timeout=60000")
         # Optimize for mixed read/write workloads
         cursor.execute("PRAGMA wal_autocheckpoint=1000")
+        # Enable foreign key constraints
+        cursor.execute("PRAGMA foreign_keys=ON")
+        # Optimize locking
+        cursor.execute("PRAGMA locking_mode=NORMAL")
         cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
