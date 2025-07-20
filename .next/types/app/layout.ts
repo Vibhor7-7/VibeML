@@ -1,4 +1,4 @@
-// File: /Users/sharvibhor/Desktop/Projects/VibeML/app/layout.tsx
+// File: /Users/sharvibhor/Desktop/Projects/VibeML-2/app/layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

@@ -54,7 +54,6 @@ class TrainConfig(BaseModel):
     dataset_id: str = Field(..., description="ID of the dataset to use")
     dataset_source: str = Field(..., description="Source of the dataset (openml, kaggle, upload)")
     target_column: str = Field(..., description="Target column for prediction")
-    problem_type: ProblemType = Field(..., description="Type of ML problem")
     algorithm: MLAlgorithm = Field(..., description="ML algorithm to use")
     
     # Feature configuration
@@ -62,7 +61,8 @@ class TrainConfig(BaseModel):
     exclude_columns: Optional[List[str]] = Field(None, description="Columns to exclude from training")
     
     # Training parameters
-    test_size: float = Field(0.2, description="Proportion of data for testing", ge=0.1, le=0.5)
+    test_size: float = Field(0.15, description="Proportion of data for testing from training split", ge=0.1, le=0.3)
+    validation_size: float = Field(0.15, description="Proportion of data reserved for retraining", ge=0.1, le=0.3)
     random_state: int = Field(42, description="Random seed for reproducibility")
     cross_validation_folds: int = Field(5, description="Number of CV folds", ge=2, le=10)
     

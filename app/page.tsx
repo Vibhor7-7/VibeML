@@ -25,7 +25,6 @@ export default function Dashboard() {
   const [loadingEvaluation, setLoadingEvaluation] = useState(false)
   const [selectedDataset, setSelectedDataset] = useState<any>(null)
   const [targetColumn, setTargetColumn] = useState('')
-  const [problemType, setProblemType] = useState('classification')
   const [datasetColumns, setDatasetColumns] = useState<string[]>([])
   const [modelConfig, setModelConfig] = useState({
     n_estimators: '',
@@ -126,7 +125,7 @@ export default function Dashboard() {
       
       // Fetch dataset info from backend
       const response = await fetch(
-        `http://localhost:8000/api/datasets/preview/${dataset.source}/${encodedDatasetName}?max_rows=5`
+        `http://localhost:8001/api/datasets/preview/${dataset.source}/${encodedDatasetName}?max_rows=5`
       )
       
       if (response.ok) {
@@ -182,24 +181,10 @@ export default function Dashboard() {
     setDatasetColumns(columns)
   }
 
-  const handleTestExternalDataset = async () => {
-    // Add a test OpenML Iris dataset that we know works
-    const testDataset = {
-      id: 61,
-      name: '61',
-      source: 'openml',
-      title: 'OpenML Iris Dataset (Test)',
-      description: 'Classic iris dataset for testing external dataset functionality'
-    }
-    
-    console.log('Loading test external dataset...')
-    await handleDatasetSelect(testDataset)
-  }
-
   const fetchEvaluationDashboard = async () => {
     try {
       setLoadingEvaluation(true)
-      const response = await fetch('http://localhost:8000/api/train/evaluation/dashboard')
+      const response = await fetch('http://localhost:8001/api/train/evaluation/dashboard')
       
       if (response.ok) {
         const data = await response.json()
@@ -224,7 +209,7 @@ export default function Dashboard() {
 
   const fetchModelAnalytics = async (modelId: string) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/train/evaluation/model/${modelId}/analytics`)
+      const response = await fetch(`http://localhost:8001/api/train/evaluation/model/${modelId}/analytics`)
       
       if (response.ok) {
         const analytics = await response.json()
@@ -279,7 +264,7 @@ export default function Dashboard() {
         // Pre-download the dataset to verify it exists and get info
         try {
           const downloadResponse = await fetch(
-            `http://localhost:8000/api/datasets/download/${datasetSource}/${encodeURIComponent(datasetId)}`,
+            `http://localhost:8001/api/datasets/download/${datasetSource}/${encodeURIComponent(datasetId)}`,
             { method: 'GET' }
           )
           
@@ -305,7 +290,7 @@ export default function Dashboard() {
         formData.append('name', uploadedFile.name.split('.')[0])
         formData.append('target_column', targetColumn)
         
-        const uploadResponse = await fetch('http://localhost:8000/api/import/upload', {
+        const uploadResponse = await fetch('http://localhost:8001/api/import/upload', {
           method: 'POST',
           body: formData
         })
@@ -329,9 +314,10 @@ export default function Dashboard() {
         dataset_id: datasetId,
         dataset_source: datasetSource,
         target_column: targetColumn,
-        problem_type: problemType,
         algorithm: autoMode ? 'auto' : selectedModel,
-        test_size: 0.2,
+        test_size: 0.15,  // Updated to 15% from training split
+        validation_size: 0.15,  // 15% reserved for retraining
+        cross_validation_folds: 5,  // CV folds for training
         auto_hyperparameter_tuning: autoMode,
         hyperparameters: selectedModel === 'random_forest' ? {
           n_estimators: modelConfig.n_estimators ? parseInt(modelConfig.n_estimators) : 100,
@@ -343,7 +329,7 @@ export default function Dashboard() {
       console.log('Training config:', trainingConfig)
       
       // Start training job
-      const response = await fetch('http://localhost:8000/api/train/start', {
+      const response = await fetch('http://localhost:8001/api/train/start', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -370,12 +356,71 @@ export default function Dashboard() {
     }
   }
 
+  const handleRetrain = async () => {
+    if (!selectedModelId) {
+      setLogs(prev => [...prev, 'Error: No model selected for retraining'])
+      return
+    }
+
+    try {
+      setIsTraining(true)
+      setLogs(prev => [...prev, 'Starting model retraining...'])
+      
+      // Get the original model's configuration
+      const originalModel = availableModels.find(m => m.model_id === selectedModelId)
+      if (!originalModel) {
+        throw new Error('Original model not found')
+      }
+
+      const retrainConfig = {
+        model_id: selectedModelId,
+        retrain_from_scratch: false,  // Use reserved validation data
+        incremental_learning: true,
+        merge_with_previous_data: false,
+        validate_against_previous: true,
+        minimum_improvement_threshold: 0.01  // Require 1% improvement
+      }
+
+      setLogs(prev => [...prev, 'Submitting retrain request...'])
+
+      const response = await fetch('http://localhost:8001/api/train/retrain', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(retrainConfig)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || 'Retraining failed to start')
+      }
+
+      const result = await response.json()
+      setCurrentJobId(result.job.job_id)
+      setLogs(prev => [...prev, `Retraining job started with ID: ${result.job.job_id}`])
+      
+      // Refresh evaluation data after retraining completes
+      setTimeout(() => {
+        fetchEvaluationDashboard()
+      }, 2000)
+
+    } catch (error) {
+      console.error('Retraining error:', error)
+      const errorMessage = error instanceof Error ? error.message : 
+                          typeof error === 'string' ? error : 
+                          'An unexpected error occurred during retraining'
+      setLogs(prev => [...prev, `Retrain Error: ${errorMessage}`])
+      setIsTraining(false)
+    }
+  }
+
   const handleClearModels = async () => {
     if (window.confirm('Are you sure you want to clear all trained models and experiments? This action cannot be undone.')) {
       try {
         setLogs(prev => [...prev, 'Clearing all models and experiments...'])
         
-        const response = await fetch('http://localhost:8000/api/train/clear', {
+        const response = await fetch('http://localhost:8001/api/train/clear', {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
@@ -545,18 +590,10 @@ export default function Dashboard() {
           <div className="max-w-6xl mx-auto">
             {activeTab === 'search' && (
               <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-semibold flex items-center text-white">
-                    <Search className="w-6 h-6 mr-3 text-purple-400" />
-                    Search Datasets
-                  </h2>
-                  <button
-                    onClick={handleTestExternalDataset}
-                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-all font-medium text-sm"
-                  >
-                    Test OpenML Iris
-                  </button>
-                </div>
+                <h2 className="text-2xl font-semibold flex items-center text-white mb-6">
+                  <Search className="w-6 h-6 mr-3 text-purple-400" />
+                  Search Datasets
+                </h2>
                 <DatasetSearch
                   onDatasetSelect={(dataset) => {
                     handleDatasetSelect(dataset)
@@ -799,23 +836,6 @@ export default function Dashboard() {
                             The column you want to predict
                           </p>
                         </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Problem Type
-                          </label>
-                          <select
-                            value={problemType}
-                            onChange={(e) => setProblemType(e.target.value)}
-                            className="w-full p-3 border border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-700 text-white"
-                          >
-                            <option value="classification">Classification</option>
-                            <option value="regression">Regression</option>
-                          </select>
-                          <p className="text-gray-400 text-xs mt-1">
-                            Type of machine learning problem
-                          </p>
-                        </div>
                       </div>
 
                       {/* Model Selection */}
@@ -968,22 +988,37 @@ export default function Dashboard() {
                         Explore detailed insights into your trained model's performance and dataset characteristics.
                       </p>
                     </div>
-                    {availableModels.length > 1 && (
-                      <div className="flex items-center gap-3">
-                        <label className="text-gray-300 text-sm">Select Model:</label>
-                        <select
-                          value={selectedModelId || ''}
-                          onChange={(e) => handleModelSelect(e.target.value)}
-                          className="bg-gray-700 border border-gray-600 text-white px-3 py-2 rounded-lg text-sm"
+                    <div className="flex items-center gap-3">
+                      {selectedModelId && (
+                        <button
+                          onClick={handleRetrain}
+                          disabled={isTraining}
+                          className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                            isTraining
+                              ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                              : 'bg-gradient-to-r from-orange-600 to-orange-700 text-white hover:from-orange-700 hover:to-orange-800'
+                          }`}
                         >
-                          {availableModels.map((model) => (
-                            <option key={model.model_id} value={model.model_id}>
-                              {model.model_name} ({model.algorithm})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
+                          {isTraining ? 'Retraining...' : 'Retrain Model'}
+                        </button>
+                      )}
+                      {availableModels.length > 1 && (
+                        <>
+                          <label className="text-gray-300 text-sm">Select Model:</label>
+                          <select
+                            value={selectedModelId || ''}
+                            onChange={(e) => handleModelSelect(e.target.value)}
+                            className="bg-gray-700 border border-gray-600 text-white px-3 py-2 rounded-lg text-sm"
+                          >
+                            {availableModels.map((model) => (
+                              <option key={model.model_id} value={model.model_id}>
+                                {model.model_name} ({model.algorithm})
+                              </option>
+                            ))}
+                          </select>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -993,6 +1028,7 @@ export default function Dashboard() {
                     <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-xl p-6 border border-gray-700">
                       <h3 className="text-xl font-semibold text-white mb-6">Performance Metrics</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                        {/* Classification Metrics */}
                         {modelAnalytics.metrics.accuracy && (
                           <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
                             <h4 className="text-base font-medium text-white mb-2">Accuracy</h4>
@@ -1035,16 +1071,74 @@ export default function Dashboard() {
                             <p className="text-gray-400 text-base font-medium">Harmonic Mean</p>
                           </div>
                         )}
+                        
+                        {/* Regression Metrics */}
+                        {modelAnalytics.metrics.r2_score !== null && modelAnalytics.metrics.r2_score !== undefined && (
+                          <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                            <h4 className="text-base font-medium text-white mb-2">R² Score</h4>
+                            <div className="text-2xl font-bold text-white mb-1">
+                              {modelAnalytics.metrics.r2_score.toFixed(3)}
+                            </div>
+                            <p className={`text-base font-medium ${
+                              modelAnalytics.metrics.r2_score > 0.8 ? 'text-green-400' : 
+                              modelAnalytics.metrics.r2_score > 0.6 ? 'text-yellow-400' : 'text-red-400'
+                            }`}>
+                              {modelAnalytics.metrics.r2_score > 0.8 ? 'Excellent' : 
+                               modelAnalytics.metrics.r2_score > 0.6 ? 'Good' : 'Poor Fit'}
+                            </p>
+                          </div>
+                        )}
+                        {modelAnalytics.metrics.mae && (
+                          <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                            <h4 className="text-base font-medium text-white mb-2">MAE</h4>
+                            <div className="text-2xl font-bold text-white mb-1">
+                              {modelAnalytics.metrics.mae.toLocaleString()}
+                            </div>
+                            <p className="text-gray-400 text-base font-medium">Mean Abs Error</p>
+                          </div>
+                        )}
+                        {modelAnalytics.metrics.mse && (
+                          <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                            <h4 className="text-base font-medium text-white mb-2">MSE</h4>
+                            <div className="text-2xl font-bold text-white mb-1">
+                              {modelAnalytics.metrics.mse.toExponential(2)}
+                            </div>
+                            <p className="text-gray-400 text-base font-medium">Mean Sq Error</p>
+                          </div>
+                        )}
+                        {modelAnalytics.metrics.rmse && (
+                          <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                            <h4 className="text-base font-medium text-white mb-2">RMSE</h4>
+                            <div className="text-2xl font-bold text-white mb-1">
+                              {modelAnalytics.metrics.rmse.toLocaleString()}
+                            </div>
+                            <p className="text-gray-400 text-base font-medium">Root Mean Sq Error</p>
+                          </div>
+                        )}
                       </div>
                       
                       {/* Additional Metrics */}
                       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-                        {modelAnalytics.training_details.cv_score && (
+                        {modelAnalytics.training_details.test_score && (
                           <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
-                            <h4 className="text-base font-medium text-white mb-2">CV Score</h4>
-                            <div className="text-2xl font-bold text-white">
-                              {(modelAnalytics.training_details.cv_score * 100).toFixed(1)}%
+                            <h4 className="text-base font-medium text-white mb-2">Test Accuracy</h4>
+                            <div className="text-2xl font-bold text-white mb-1">
+                              {(modelAnalytics.training_details.test_score * 100).toFixed(1)}%
                             </div>
+                            <p className="text-gray-400 text-base font-medium">Hold-out Test</p>
+                          </div>
+                        )}
+                        {modelAnalytics.training_details.overfitting_risk && (
+                          <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
+                            <h4 className="text-base font-medium text-white mb-2">Overfitting Risk</h4>
+                            <div className={`text-2xl font-bold mb-1 ${
+                              modelAnalytics.training_details.overfitting_risk === 'Low' ? 'text-green-400' :
+                              modelAnalytics.training_details.overfitting_risk === 'Medium' ? 'text-yellow-400' :
+                              'text-red-400'
+                            }`}>
+                              {modelAnalytics.training_details.overfitting_risk}
+                            </div>
+                            <p className="text-gray-400 text-base font-medium">Model Stability</p>
                           </div>
                         )}
                       </div>

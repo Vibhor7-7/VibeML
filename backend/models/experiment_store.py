@@ -230,6 +230,10 @@ class ExperimentStore:
         """Get run by ID."""
         return self.db.query(Run).filter(Run.id == run_id).first()
     
+    def get_run_by_model_id(self, model_id: str) -> Optional[Run]:
+        """Get run by model ID."""
+        return self.db.query(Run).filter(Run.model_id == model_id).first()
+    
     def get_runs_by_experiment(self, experiment_id: int) -> List[Run]:
         """Get all runs for an experiment."""
         return self.db.query(Run).filter(Run.experiment_id == experiment_id).all()

@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 import uuid
 
 from models.experiment_store import get_db, ExperimentStore
-from db_schema.train_config import TrainConfig, TrainingJob, TrainingJobResponse, RetrainConfig
+from db_schema.train_config import TrainConfig, TrainingJob, TrainingJobResponse, RetrainConfig, MLAlgorithm, ProblemType
 from scripts.celery_tasks import train_model_task, celery_app
 from scripts.scheduler import hyperparameter_optimizer, training_scheduler
 
@@ -24,13 +24,14 @@ async def start_training(
         # Create experiment store
         exp_store = ExperimentStore(db)
         
+        # Auto-detect problem type based on target column data will be handled in training engine
         # Create experiment if it doesn't exist
         experiment = exp_store.create_experiment(
             name=config.model_name,
             dataset_id=config.dataset_id,
-            problem_type=config.problem_type.value,
+            problem_type="regression",  # Default, will be updated during training
             target_column=config.target_column,
-            description=f"Training {config.algorithm.value} for {config.problem_type.value}"
+            description=f"Training {config.algorithm.value} with auto-detected problem type"
         )
         
         # Create run
@@ -53,7 +54,7 @@ async def start_training(
             'target_column': config.target_column,
             'algorithm': config.algorithm.value if config.algorithm.value != 'auto' else None,
             'test_size': config.test_size,
-            'cv_folds': getattr(config, 'cv_folds', 5),
+            'cv_folds': config.cross_validation_folds,  # Use the correct field from schema
             'auto_hyperparameter_tuning': config.auto_hyperparameter_tuning
         }
         
@@ -70,7 +71,7 @@ async def start_training(
             model_name=config.model_name,
             status="running",
             algorithm=config.algorithm,
-            problem_type=config.problem_type,
+            problem_type=ProblemType.REGRESSION,  # Default, will be auto-detected during training
             progress_percentage=0.0,
             current_step="Initializing",
             created_at=run.created_at,
@@ -608,12 +609,17 @@ async def list_training_jobs(skip: int = 0, limit: int = 100, db: Session = Depe
         for experiment in experiments:
             runs = exp_store.get_runs_by_experiment(experiment.id)
             for run in runs:
+                # Handle legacy problem_type values
+                problem_type = experiment.problem_type
+                if problem_type == "auto_detect" or problem_type not in ["classification", "regression", "clustering", "anomaly_detection"]:
+                    problem_type = "regression"  # Default fallback
+                
                 job = TrainingJob(
                     job_id=str(run.id),
                     model_name=experiment.name,
                     status=run.status,
                     algorithm=run.algorithm,
-                    problem_type=experiment.problem_type,
+                    problem_type=problem_type,
                     progress_percentage=100.0 if run.status == "completed" else 0.0,
                     current_step=run.status.title(),
                     created_at=run.created_at,
@@ -676,3 +682,87 @@ async def clear_all_models(db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to clear models: {str(e)}")
+
+
+@router.post("/retrain", response_model=TrainingJobResponse)
+async def retrain_model(
+    config: RetrainConfig,
+    db: Session = Depends(get_db)
+):
+    """Retrain an existing model with reserved validation data."""
+    try:
+        # Create experiment store
+        exp_store = ExperimentStore(db)
+        
+        # Get the original model's run by run ID (which is what frontend sends as model_id)
+        try:
+            run_id = int(config.model_id)
+            original_run = exp_store.get_run(run_id)
+        except ValueError:
+            # If not a valid integer, try to find by actual model_id
+            original_run = exp_store.get_run_by_model_id(config.model_id)
+            
+        if not original_run:
+            raise HTTPException(status_code=404, detail="Original model not found")
+        
+        # Get the original experiment
+        original_experiment = exp_store.get_experiment(original_run.experiment_id)
+        if not original_experiment:
+            raise HTTPException(status_code=404, detail="Original experiment not found")
+        
+        # Create a new run for retraining
+        retrain_run = exp_store.create_run(
+            experiment_id=original_experiment.id,
+            algorithm=original_run.algorithm,
+            hyperparameters=config.updated_hyperparameters or original_run.hyperparameters,
+            model_id=str(uuid.uuid4())
+        )
+        
+        # Update run status to running
+        exp_store.update_run_status(retrain_run.id, 'running')
+        
+        # Prepare retraining configuration for Celery task
+        retrain_config = {
+            'run_id': retrain_run.id,
+            'original_run_id': original_run.id,
+            'dataset_source': 'local',  # Most of our test datasets are local
+            'dataset_id': original_experiment.dataset_id,
+            'target_column': original_experiment.target_column,
+            'algorithm': original_run.algorithm,
+            'retrain_from_scratch': config.retrain_from_scratch,
+            'incremental_learning': config.incremental_learning,
+            'merge_with_previous_data': config.merge_with_previous_data,
+            'validate_against_previous': config.validate_against_previous,
+            'minimum_improvement_threshold': config.minimum_improvement_threshold,
+            'test_size': 0.2,  # Use reserved validation data
+            'cv_folds': 5,
+            'auto_hyperparameter_tuning': True  # Enable auto tuning for retraining
+        }
+        
+        # Start Celery retraining task (we'll use the same train_model_task with retrain flag)
+        task = train_model_task.delay(retrain_config)
+        
+        # Update run with Celery task ID
+        retrain_run.celery_task_id = task.id
+        db.commit()
+        
+        # Create training job response
+        job = TrainingJob(
+            job_id=str(retrain_run.id),
+            model_name=f"{original_experiment.name}_retrained",
+            status="running",
+            algorithm=MLAlgorithm(original_run.algorithm),
+            problem_type=ProblemType(original_experiment.problem_type),
+            progress_percentage=0.0,
+            current_step="Initializing Retraining",
+            created_at=retrain_run.created_at,
+            celery_task_id=task.id
+        )
+        
+        return TrainingJobResponse(
+            job=job,
+            message=f"Retraining job {job.job_id} started successfully with task ID {task.id}"
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start retraining: {str(e)}")

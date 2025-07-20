@@ -82,14 +82,17 @@ class AutoMLEngine:
             }
         }
     
-    def prepare_data(self, df: pd.DataFrame, target_column: str, test_size: float = 0.2) -> Tuple[Any, Any, Any, Any, Any]:
+    def prepare_data(self, df: pd.DataFrame, target_column: str, test_size: float = 0.15, validation_size: float = 0.15, is_retrain: bool = False) -> Tuple[Any, Any, Any, Any, Any]:
         """
         Prepare data for training with automatic preprocessing.
+        Now implements 85%/15% split strategy with reserved validation data.
         
         Args:
             df: Input DataFrame
             target_column: Name of target column
-            test_size: Proportion of data for testing
+            test_size: Proportion of training data for testing (default 15% of training split)
+            validation_size: Proportion of total data reserved for retraining (default 15%)
+            is_retrain: Whether this is a retraining operation
         
         Returns:
             Tuple of (X_train, X_test, y_train, y_test, preprocessor)
@@ -125,12 +128,30 @@ class AutoMLEngine:
             remainder='passthrough'
         )
         
-        # Split the data
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=42, stratify=y if self._is_classification(y) else None
-        )
-        
-        logger.info(f"Data split - Train: {X_train.shape[0]}, Test: {X_test.shape[0]}")
+        if is_retrain:
+            # For retraining, use the reserved validation data (last 15% of dataset)
+            validation_start_idx = int(len(X) * (1 - validation_size))
+            X_validation = X.iloc[validation_start_idx:]
+            y_validation = y.iloc[validation_start_idx:]
+            
+            # Split validation data into train/test (80/20)
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_validation, y_validation, test_size=0.2, random_state=42, 
+                stratify=y_validation if self._is_classification(y_validation) else None
+            )
+            logger.info(f"Retraining with validation data - Train: {X_train.shape[0]}, Test: {X_test.shape[0]}")
+        else:
+            # For initial training, use first 85% of data and split it 80/20
+            training_end_idx = int(len(X) * (1 - validation_size))
+            X_training_pool = X.iloc[:training_end_idx]
+            y_training_pool = y.iloc[:training_end_idx]
+            
+            # Split the 85% into train/test
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_training_pool, y_training_pool, test_size=test_size/(1-validation_size), random_state=42,
+                stratify=y_training_pool if self._is_classification(y_training_pool) else None
+            )
+            logger.info(f"Initial training with 85% data - Train: {X_train.shape[0]}, Test: {X_test.shape[0]}, Reserved: {len(X) - training_end_idx}")
         
         return X_train, X_test, y_train, y_test, preprocessor
     
@@ -149,10 +170,12 @@ class AutoMLEngine:
         self,
         df: pd.DataFrame,
         target_column: str,
-        test_size: float = 0.2,
+        test_size: float = 0.15,
+        validation_size: float = 0.15,
         cv_folds: int = 5,
         enable_hyperparameter_tuning: bool = True,
-        algorithms: Optional[list] = None
+        algorithms: Optional[list] = None,
+        is_retrain: bool = False
     ) -> Dict[str, Any]:
         """
         Automatically train and select the best model.
@@ -160,10 +183,12 @@ class AutoMLEngine:
         Args:
             df: Input DataFrame
             target_column: Target column name
-            test_size: Test set proportion
+            test_size: Test set proportion from training data
+            validation_size: Proportion of total data reserved for retraining
             cv_folds: Cross-validation folds
             enable_hyperparameter_tuning: Whether to tune hyperparameters
             algorithms: Specific algorithms to try (None for all)
+            is_retrain: Whether this is a retraining operation
         
         Returns:
             Dictionary with training results and best model info
@@ -172,7 +197,9 @@ class AutoMLEngine:
         start_time = datetime.utcnow()
         
         # Prepare data
-        X_train, X_test, y_train, y_test, preprocessor = self.prepare_data(df, target_column, test_size)
+        X_train, X_test, y_train, y_test, preprocessor = self.prepare_data(
+            df, target_column, test_size, validation_size, is_retrain
+        )
         
         # Determine problem type
         is_classification = self._is_classification(y_train)

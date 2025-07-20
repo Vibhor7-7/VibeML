@@ -232,15 +232,19 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
         )
         
         # Train the model
+        is_retrain = config.get('original_run_id') is not None  # Check if this is a retraining task
+        
         if algorithm and algorithm != 'auto':
             # Train specific algorithm
             training_results = training_engine.auto_train(
                 df=df,
                 target_column=target_column,
                 test_size=test_size,
+                validation_size=0.15,
                 cv_folds=cv_folds,
                 enable_hyperparameter_tuning=enable_tuning,
-                algorithms=[algorithm]
+                algorithms=[algorithm],
+                is_retrain=is_retrain
             )
         else:
             # AutoML - try all algorithms
@@ -248,8 +252,10 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
                 df=df,
                 target_column=target_column,
                 test_size=test_size,
+                validation_size=0.15,
                 cv_folds=cv_folds,
-                enable_hyperparameter_tuning=enable_tuning
+                enable_hyperparameter_tuning=enable_tuning,
+                is_retrain=is_retrain
             )
         
         # Update progress

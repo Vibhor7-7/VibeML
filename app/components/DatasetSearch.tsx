@@ -37,7 +37,7 @@ export default function DatasetSearch({ onDatasetSelect, selectedDataset }: Data
       setLoading(true)
       try {
         const response = await fetch(
-          `http://localhost:8000/api/datasets/search?query=test&source=local&max_results=20`
+          `http://localhost:8001/api/datasets/search?query=test&source=local&max_results=20`
         )
         
         if (response.ok) {
@@ -62,7 +62,7 @@ export default function DatasetSearch({ onDatasetSelect, selectedDataset }: Data
     try {
       // Add full URL to ensure it reaches the backend
       const response = await fetch(
-        `http://localhost:8000/api/datasets/search?query=${encodeURIComponent(query || 'test')}&source=${source}&max_results=20`
+        `http://localhost:8001/api/datasets/search?query=${encodeURIComponent(query || 'test')}&source=${source}&max_results=20`
       )
       
       if (response.ok) {
@@ -213,7 +213,7 @@ export default function DatasetSearch({ onDatasetSelect, selectedDataset }: Data
     try {
       // Fetch real dataset preview from backend
       const response = await fetch(
-        `http://localhost:8000/api/datasets/preview/${dataset.source}/${encodeURIComponent(dataset.name)}?max_rows=10`
+        `http://localhost:8001/api/datasets/preview/${dataset.source}/${encodeURIComponent(dataset.name)}?max_rows=10`
       )
       
       if (response.ok) {
