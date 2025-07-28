@@ -37,9 +37,8 @@ export default function DatasetSearch({ onDatasetSelect, selectedDataset }: Data
       setLoading(true)
       try {
         const response = await fetch(
-          `http://localhost:8001/api/datasets/search?query=test&source=local&max_results=20`
+          `http://localhost:8000/api/datasets/search?query=test&source=local&max_results=20`
         )
-        
         if (response.ok) {
           const data = await response.json()
           console.log('Initial datasets loaded:', data)
@@ -62,9 +61,8 @@ export default function DatasetSearch({ onDatasetSelect, selectedDataset }: Data
     try {
       // Add full URL to ensure it reaches the backend
       const response = await fetch(
-        `http://localhost:8001/api/datasets/search?query=${encodeURIComponent(query || 'test')}&source=${source}&max_results=20`
+        `http://localhost:8000/api/datasets/search?query=${encodeURIComponent(query || 'test')}&source=${source}&max_results=20`
       )
-      
       if (response.ok) {
         const data = await response.json()
         console.log('Search results:', data)
@@ -213,24 +211,28 @@ export default function DatasetSearch({ onDatasetSelect, selectedDataset }: Data
     try {
       // Fetch real dataset preview from backend
       const response = await fetch(
-        `http://localhost:8001/api/datasets/preview/${dataset.source}/${encodeURIComponent(dataset.name)}?max_rows=10`
+        `http://localhost:8000/api/datasets/preview/${dataset.source}/${encodeURIComponent(dataset.name)}?max_rows=10`
       )
-      
       if (response.ok) {
         const previewInfo = await response.json()
         console.log('Dataset preview:', previewInfo)
-        
         setPreviewColumns(previewInfo.columns)
         setPreviewData(previewInfo.sample_data)
       } else {
-        console.error('Failed to fetch dataset preview:', await response.text())
+        const errorText = await response.text()
+        let errorMsg = 'Failed to load preview. The backend may be unavailable.'
+        try {
+          const errJson = JSON.parse(errorText)
+          if (errJson.detail) errorMsg = errJson.detail
+        } catch {}
+        console.error('Failed to fetch dataset preview:', errorText)
         setPreviewColumns(['Error'])
-        setPreviewData([{ Error: 'Failed to load preview. The backend may be unavailable.' }])
+        setPreviewData([{ Error: errorMsg }])
       }
     } catch (error) {
       console.error('Error fetching dataset preview:', error)
       setPreviewColumns(['Error'])
-      setPreviewData([{ Error: 'Failed to load preview. The backend may be unavailable.' }])
+      setPreviewData([{ Error: String(error) }])
     } finally {
       setPreviewLoading(false)
     }

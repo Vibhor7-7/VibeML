@@ -470,22 +470,17 @@ export default function Dashboard() {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-green-900 flex">
       {/* Left Sidebar Navigation */}
       <div className="w-64 bg-gray-800/80 backdrop-blur-sm border-r border-gray-700 flex flex-col">
-        {/* Logo Section */}
-        <div className="p-6 border-b border-gray-700">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 relative">
-              <Image
-                src="/Screenshot 2025-07-19 at 10.33.37 AM.png"
-                alt="VibeML Logo"
-                width={40}
-                height={40}
-                className="rounded-lg object-contain"
-              />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-white">VibeML</h1>
-              <span className="text-xs text-gray-300">No-Code AutoML</span>
-            </div>
+        {/* Logo Section - fills empty space and centers logo with minimal vertical space */}
+        <div className="flex flex-col items-center justify-center py-2 border-b border-gray-700 min-h-0">
+          <div className="w-36 h-36 relative flex items-center justify-center">
+            <Image
+              src="/Logo.png"
+              alt="VibeML Logo"
+              width={144}
+              height={144}
+              className="rounded-lg object-contain shadow-lg"
+              priority
+            />
           </div>
         </div>
 
