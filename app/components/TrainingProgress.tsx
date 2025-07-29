@@ -33,7 +33,7 @@ export default function TrainingProgress({ jobId, onJobComplete }: TrainingProgr
 
   const fetchJobStatus = async (id: string) => {
     try {
-      const response = await fetch(`http://localhost:8001/api/train/status/${id}`)
+      const response = await fetch(`http://localhost:8000/api/train/status/${id}`)
       
       if (response.ok) {
         const data = await response.json()

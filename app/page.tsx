@@ -13,8 +13,10 @@ export default function Dashboard() {
   const [isTraining, setIsTraining] = useState(false)
   const [logs, setLogs] = useState<string[]>([])
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [validationFile, setValidationFile] = useState<File | null>(null)
   const [showPreview, setShowPreview] = useState(false)
   const [previewData, setPreviewData] = useState<any[]>([])
+  const [validationPreviewData, setValidationPreviewData] = useState<any[]>([])
   const [selectedModel, setSelectedModel] = useState('')
   const [autoMode, setAutoMode] = useState(false)
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
@@ -26,6 +28,7 @@ export default function Dashboard() {
   const [selectedDataset, setSelectedDataset] = useState<any>(null)
   const [targetColumn, setTargetColumn] = useState('')
   const [datasetColumns, setDatasetColumns] = useState<string[]>([])
+  const [targetSuggestions, setTargetSuggestions] = useState<any>(null)
   const [modelConfig, setModelConfig] = useState({
     n_estimators: '',
     max_depth: '',
@@ -103,8 +106,46 @@ export default function Dashboard() {
 
   const handlePreviewConfirm = () => {
     setShowPreview(false)
-    setActiveTab('train')
-    console.log('Data confirmed, proceeding to training...')
+    // Stay on upload tab so user can add validation set
+    console.log('Data confirmed, returning to upload page for optional validation set...')
+  }
+
+  const handleValidationFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    console.log('Validation file uploaded:', file?.name, 'Type:', file?.type)
+    if (file && file.type === 'text/csv') {
+      setValidationFile(file)
+      
+      // Parse CSV to extract data for validation preview
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const text = e.target?.result as string
+        console.log('Validation file content preview:', text.substring(0, 200))
+        const lines = text.split('\n').filter(line => line.trim()) // Remove empty lines
+        
+        if (lines.length > 0) {
+          const headers = lines[0].split(',').map(col => col.trim().replace(/"/g, ''))
+          console.log('Validation CSV columns extracted:', headers)
+          
+          // Parse the actual data rows
+          const dataRows = lines.slice(1, Math.min(6, lines.length)) // Take up to 5 data rows for validation preview
+          const parsedData = dataRows.map((line, index) => {
+            const values = line.split(',').map(val => val.trim().replace(/"/g, ''))
+            const rowData: any = { _rowIndex: index }
+            headers.forEach((header, colIndex) => {
+              rowData[header] = values[colIndex] || ''
+            })
+            return rowData
+          })
+          
+          console.log('Parsed validation CSV data:', parsedData)
+          setValidationPreviewData(parsedData)
+        }
+      }
+      reader.readAsText(file)
+    } else {
+      console.log('Unsupported validation file type:', file?.type)
+    }
   }
 
   const handleReupload = () => {
@@ -114,6 +155,28 @@ export default function Dashboard() {
     setPreviewData([])
     setDatasetColumns([]) // Clear columns
     setTargetColumn('') // Clear target column
+    setTargetSuggestions(null) // Clear target suggestions
+  }
+
+  // Helper function to check if target column is problematic
+  const getTargetColumnWarning = (column: string) => {
+    if (!targetSuggestions) return null
+    
+    const problematic = targetSuggestions.problematic_targets?.find((target: any) => target.column === column)
+    if (problematic) {
+      return {
+        type: problematic.type,
+        reason: problematic.reason,
+        isError: problematic.type === 'insufficient_samples' || problematic.type === 'unique_id'
+      }
+    }
+    return null
+  }
+
+  // Helper function to get target column recommendations
+  const getTargetColumnRecommendations = () => {
+    if (!targetSuggestions || !targetSuggestions.good_targets) return []
+    return targetSuggestions.good_targets.slice(0, 3) // Show top 3 recommendations
   }
 
   const fetchDatasetColumns = async (dataset: any) => {
@@ -125,7 +188,7 @@ export default function Dashboard() {
       
       // Fetch dataset info from backend
       const response = await fetch(
-        `http://localhost:8001/api/datasets/preview/${dataset.source}/${encodedDatasetName}?max_rows=5`
+        `http://localhost:8000/api/datasets/preview/${dataset.source}/${encodedDatasetName}?max_rows=5`
       )
       
       if (response.ok) {
@@ -184,7 +247,7 @@ export default function Dashboard() {
   const fetchEvaluationDashboard = async () => {
     try {
       setLoadingEvaluation(true)
-      const response = await fetch('http://localhost:8001/api/train/evaluation/dashboard')
+      const response = await fetch('http://localhost:8000/api/train/evaluation/dashboard')
       
       if (response.ok) {
         const data = await response.json()
@@ -209,7 +272,7 @@ export default function Dashboard() {
 
   const fetchModelAnalytics = async (modelId: string) => {
     try {
-      const response = await fetch(`http://localhost:8001/api/train/evaluation/model/${modelId}/analytics`)
+      const response = await fetch(`http://localhost:8000/api/train/evaluation/model/${modelId}/analytics`)
       
       if (response.ok) {
         const analytics = await response.json()
@@ -234,6 +297,58 @@ export default function Dashboard() {
       fetchEvaluationDashboard()
     }
   }, [activeTab])
+
+  // Monitor training status when a job is active
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null
+
+    if (currentJobId && isTraining) {
+      intervalId = setInterval(async () => {
+        try {
+          const response = await fetch(`http://localhost:8000/api/train/status/${currentJobId}`)
+          if (response.ok) {
+            const statusData = await response.json()
+            
+            // Update logs with current status
+            setLogs(prev => {
+              const newLogs = [...prev]
+              const lastLog = newLogs[newLogs.length - 1]
+              const newStatus = `Status: ${statusData.status} (${statusData.progress_percentage.toFixed(1)}%) - ${statusData.current_step}`
+              
+              // Update last log if it's a status update, otherwise add new log
+              if (lastLog && lastLog.startsWith('Status:')) {
+                newLogs[newLogs.length - 1] = newStatus
+              } else {
+                newLogs.push(newStatus)
+              }
+              
+              return newLogs
+            })
+            
+            // Check if training is complete
+            if (statusData.status === 'completed') {
+              setIsTraining(false)
+              setCurrentJobId(null)
+              setLogs(prev => [...prev, '✅ Training completed successfully!'])
+              fetchEvaluationDashboard() // Refresh evaluation data
+            } else if (statusData.status === 'failed') {
+              setIsTraining(false)
+              setCurrentJobId(null)
+              setLogs(prev => [...prev, `❌ Training failed: ${statusData.error_message || 'Unknown error'}`])
+            }
+          }
+        } catch (error) {
+          console.error('Error checking training status:', error)
+        }
+      }, 2000) // Poll every 2 seconds
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId)
+      }
+    }
+  }, [currentJobId, isTraining])
 
   const handleTrain = async () => {
     try {
@@ -264,7 +379,7 @@ export default function Dashboard() {
         // Pre-download the dataset to verify it exists and get info
         try {
           const downloadResponse = await fetch(
-            `http://localhost:8001/api/datasets/download/${datasetSource}/${encodeURIComponent(datasetId)}`,
+            `http://localhost:8000/api/datasets/download/${datasetSource}/${encodeURIComponent(datasetId)}`,
             { method: 'GET' }
           )
           
@@ -290,7 +405,13 @@ export default function Dashboard() {
         formData.append('name', uploadedFile.name.split('.')[0])
         formData.append('target_column', targetColumn)
         
-        const uploadResponse = await fetch('http://localhost:8001/api/import/upload', {
+        // Add validation file if provided
+        if (validationFile) {
+          formData.append('validation_file', validationFile)
+          setLogs(prev => [...prev, 'Uploading validation set...'])
+        }
+        
+        const uploadResponse = await fetch('http://localhost:8000/api/import/upload', {
           method: 'POST',
           body: formData
         })
@@ -304,6 +425,15 @@ export default function Dashboard() {
         datasetId = uploadResult.dataset_id
         datasetSource = 'upload'
         setLogs(prev => [...prev, `Dataset uploaded with ID: ${datasetId}`])
+        
+        // Store target suggestions if available
+        if (uploadResult.target_suggestions) {
+          setTargetSuggestions(uploadResult.target_suggestions)
+        }
+        
+        if (validationFile) {
+          setLogs(prev => [...prev, 'Validation set uploaded successfully'])
+        }
       } else {
         throw new Error('No dataset selected or uploaded')
       }
@@ -315,9 +445,10 @@ export default function Dashboard() {
         dataset_source: datasetSource,
         target_column: targetColumn,
         algorithm: autoMode ? 'auto' : selectedModel,
-        test_size: 0.15,  // Updated to 15% from training split
-        validation_size: 0.15,  // 15% reserved for retraining
-        cross_validation_folds: 5,  // CV folds for training
+        test_size: validationFile ? 0.2 : 0.15,  // Use 20% test if no validation set, 15% if validation set provided
+        validation_size: validationFile ? 0.0 : 0.15,  // Use 0% validation if external validation set provided
+        has_validation_set: !!validationFile,  // Flag to indicate if validation set is provided
+        cross_validation_folds: validationFile ? 2 : 5,  // Use fewer CV folds when external validation set is provided
         auto_hyperparameter_tuning: autoMode,
         hyperparameters: selectedModel === 'random_forest' ? {
           n_estimators: modelConfig.n_estimators ? parseInt(modelConfig.n_estimators) : 100,
@@ -329,7 +460,7 @@ export default function Dashboard() {
       console.log('Training config:', trainingConfig)
       
       // Start training job
-      const response = await fetch('http://localhost:8001/api/train/start', {
+      const response = await fetch('http://localhost:8000/api/train/start', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -383,7 +514,7 @@ export default function Dashboard() {
 
       setLogs(prev => [...prev, 'Submitting retrain request...'])
 
-      const response = await fetch('http://localhost:8001/api/train/retrain', {
+      const response = await fetch('http://localhost:8000/api/train/retrain', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -420,7 +551,7 @@ export default function Dashboard() {
       try {
         setLogs(prev => [...prev, 'Clearing all models and experiments...'])
         
-        const response = await fetch('http://localhost:8001/api/train/clear', {
+        const response = await fetch('http://localhost:8000/api/train/clear', {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
@@ -607,27 +738,143 @@ export default function Dashboard() {
                 
                 {!showPreview ? (
                   <>
-                    <div className="border-2 border-dashed border-gray-600 rounded-lg p-12 text-center hover:border-blue-400 transition-colors cursor-pointer bg-gray-900/30">
-                      <input
-                        type="file"
-                        accept=".csv"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                        id="csv-upload"
-                      />
-                      <label htmlFor="csv-upload" className="cursor-pointer">
-                        <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-xl font-medium text-white mb-2">
-                          Drop your CSV file here
-                        </h3>
-                        <p className="text-gray-400 mb-6">
-                          or click to browse files
-                        </p>
-                        <span className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-md hover:from-blue-700 hover:to-blue-800 transition-all font-medium inline-block">
-                          Choose File
-                        </span>
-                      </label>
+                    {/* Show uploaded file status or upload area */}
+                    {uploadedFile ? (
+                      <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-6 mb-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-3 h-3 bg-green-400 rounded-full"></div>
+                            <h3 className="text-green-300 font-medium text-lg">File Uploaded Successfully</h3>
+                          </div>
+                          <button
+                            onClick={handleReupload}
+                            className="text-blue-400 hover:text-blue-300 text-sm font-medium"
+                          >
+                            Upload Different File
+                          </button>
+                        </div>
+                        <p className="text-white text-lg mb-2">{uploadedFile.name}</p>
+                        <p className="text-green-200 text-sm">Ready for training • {datasetColumns.length} columns detected</p>
+                        
+                        {previewData.length > 0 && (
+                          <div className="mt-4">
+                            <button
+                              onClick={() => setShowPreview(true)}
+                              className="text-blue-400 hover:text-blue-300 text-sm font-medium"
+                            >
+                              View Data Preview →
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="border-2 border-dashed border-gray-600 rounded-lg p-12 text-center hover:border-blue-400 transition-colors cursor-pointer bg-gray-900/30">
+                        <input
+                          type="file"
+                          accept=".csv"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                          id="csv-upload"
+                        />
+                        <label htmlFor="csv-upload" className="cursor-pointer">
+                          <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                          <h3 className="text-xl font-medium text-white mb-2">
+                            Drop your CSV file here
+                          </h3>
+                          <p className="text-gray-400 mb-6">
+                            or click to browse files
+                          </p>
+                          <span className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-md hover:from-blue-700 hover:to-blue-800 transition-all font-medium inline-block">
+                            Choose File
+                          </span>
+                        </label>
+                      </div>
+                    )}
+                    
+                    {/* Optional Validation Set Upload */}
+                    <div className="mt-8 bg-gray-700/30 border border-gray-600 rounded-lg p-6">
+                      <h3 className="text-lg font-medium text-white mb-4 flex items-center">
+                        <Target className="w-5 h-5 mr-2 text-green-400" />
+                        Optional: Upload Validation Set
+                      </h3>
+                      <p className="text-gray-300 text-sm mb-4">
+                        Upload a separate validation set for more accurate model evaluation. If not provided, 
+                        we'll use an 85-15 train-test split from your training data.
+                      </p>
+                      
+                      {!validationFile ? (
+                        <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center hover:border-green-400 transition-colors cursor-pointer bg-gray-900/20">
+                          <input
+                            type="file"
+                            accept=".csv"
+                            onChange={handleValidationFileUpload}
+                            className="hidden"
+                            id="validation-upload"
+                          />
+                          <label htmlFor="validation-upload" className="cursor-pointer">
+                            <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                            <h4 className="text-lg font-medium text-white mb-2">
+                              Drop validation CSV here
+                            </h4>
+                            <p className="text-gray-400 mb-4">
+                              or click to browse files
+                            </p>
+                            <span className="bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-2 rounded-md hover:from-green-700 hover:to-green-800 transition-all font-medium inline-block">
+                              Choose Validation File
+                            </span>
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-green-300 font-medium">Validation File Uploaded</h4>
+                            <button
+                              onClick={() => {
+                                setValidationFile(null)
+                                setValidationPreviewData([])
+                              }}
+                              className="text-red-400 hover:text-red-300 text-sm"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <p className="text-white text-sm mb-2">{validationFile.name}</p>
+                          
+                          {validationPreviewData.length > 0 && (
+                            <div className="mt-3">
+                              <p className="text-green-200 text-xs mb-2">Validation Preview (first 5 rows):</p>
+                              <div className="overflow-hidden rounded border border-green-500/30 bg-gray-800/50">
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-xs">
+                                    <thead>
+                                      <tr className="bg-green-900/30">
+                                        {datasetColumns.map((column, index) => (
+                                          <th key={index} className="px-2 py-1 text-left text-green-200 font-medium">
+                                            {column}
+                                          </th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {validationPreviewData.map((row, index) => (
+                                        <tr key={index} className="border-t border-green-500/20">
+                                          {datasetColumns.map((column, colIndex) => (
+                                            <td key={colIndex} className="px-2 py-1 text-gray-200">
+                                              {row[column] || ''}
+                                            </td>
+                                          ))}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
+                    
                     <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
                       <div className="bg-gray-700/50 p-6 rounded-lg border border-gray-600">
                         <h4 className="font-medium text-white text-lg mb-2">Supported Formats</h4>
@@ -642,6 +889,18 @@ export default function Dashboard() {
                         <p className="text-sm text-gray-300">Handles missing values</p>
                       </div>
                     </div>
+                    
+                    {/* Proceed to Training Button - only show when dataset is uploaded */}
+                    {uploadedFile && (
+                      <div className="mt-8 flex justify-center">
+                        <button
+                          onClick={() => setActiveTab('train')}
+                          className="bg-gradient-to-r from-green-600 to-green-700 text-white px-8 py-3 rounded-lg hover:from-green-700 hover:to-green-800 transition-all font-medium text-lg shadow-lg"
+                        >
+                          Proceed to Training
+                        </button>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -819,14 +1078,59 @@ export default function Dashboard() {
                           >
                             <option value="">Select target column...</option>
                             {datasetColumns.map((column) => {
-                              console.log('Rendering column option:', column)
+                              const warning = getTargetColumnWarning(column)
                               return (
                                 <option key={column} value={column}>
-                                  {column}
+                                  {column} {warning?.isError ? '⚠️' : ''}
                                 </option>
                               )
                             })}
                           </select>
+                          
+                          {/* Target column warning */}
+                          {targetColumn && getTargetColumnWarning(targetColumn) && (
+                            <div className={`mt-2 p-3 rounded-lg border ${
+                              getTargetColumnWarning(targetColumn)?.isError 
+                                ? 'bg-red-900/20 border-red-500/30 text-red-300' 
+                                : 'bg-yellow-900/20 border-yellow-500/30 text-yellow-300'
+                            }`}>
+                              <div className="flex items-start gap-2">
+                                <span className="text-lg">⚠️</span>
+                                <div>
+                                  <p className="font-medium text-sm">
+                                    {getTargetColumnWarning(targetColumn)?.isError ? 'Invalid Target Column' : 'Target Column Warning'}
+                                  </p>
+                                  <p className="text-xs mt-1">
+                                    {getTargetColumnWarning(targetColumn)?.reason}
+                                  </p>
+                                  {getTargetColumnWarning(targetColumn)?.isError && (
+                                    <p className="text-xs mt-2 font-medium">
+                                      Training will fail with this target column. Please select a different column.
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Target column recommendations */}
+                          {targetSuggestions && getTargetColumnRecommendations().length > 0 && !targetColumn && (
+                            <div className="mt-2 p-3 bg-blue-900/20 border border-blue-500/30 rounded-lg">
+                              <p className="text-blue-300 font-medium text-sm mb-2">💡 Recommended target columns:</p>
+                              <div className="space-y-1">
+                                {getTargetColumnRecommendations().map((suggestion: any) => (
+                                  <button
+                                    key={suggestion.column}
+                                    onClick={() => setTargetColumn(suggestion.column)}
+                                    className="block w-full text-left text-xs text-blue-200 hover:text-blue-100 hover:bg-blue-800/20 p-2 rounded transition-colors"
+                                  >
+                                    <span className="font-medium">{suggestion.column}</span> - {suggestion.reason}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
                           <p className="text-gray-400 text-xs mt-1">
                             The column you want to predict
                           </p>
@@ -889,14 +1193,21 @@ export default function Dashboard() {
                       <div className="mt-6">
                         <button
                           onClick={handleTrain}
-                          disabled={(!selectedModel && !autoMode) || !targetColumn}
+                          disabled={
+                            (!selectedModel && !autoMode) || 
+                            !targetColumn || 
+                            isTraining ||
+                            (targetColumn && getTargetColumnWarning(targetColumn)?.isError)
+                          }
                           className={`w-full px-6 py-3 rounded-lg font-medium transition-all ${
-                            ((!selectedModel && !autoMode) || !targetColumn) || isTraining
+                            ((!selectedModel && !autoMode) || !targetColumn || isTraining || (targetColumn && getTargetColumnWarning(targetColumn)?.isError))
                               ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
                               : 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:from-green-700 hover:to-green-800'
                           }`}
                         >
-                          {isTraining ? 'Training in Progress...' : 'Start Training'}
+                          {isTraining ? 'Training in Progress...' : 
+                           targetColumn && getTargetColumnWarning(targetColumn)?.isError ? 'Fix Target Column to Continue' :
+                           'Start Training'}
                         </button>
                         
                         {/* Clear Models Button */}

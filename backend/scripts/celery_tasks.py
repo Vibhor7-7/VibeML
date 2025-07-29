@@ -170,12 +170,17 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
             
             # Check if the dataset was temporarily stored
             temp_dir = tempfile.gettempdir()
+            logger.info(f"Celery worker temp directory: {temp_dir}")
+            logger.info(f"Looking for dataset_id: {dataset_id}")
+            
             possible_paths = [
                 os.path.join(temp_dir, f"dataset_upload_{dataset_id}.csv"),
                 os.path.join(temp_dir, f"dataset_{dataset_source}_{dataset_id.replace('/', '_')}.csv"),
                 os.path.join(temp_dir, f"{dataset_id}.csv"),
                 dataset_id  # In case dataset_id is actually a file path
             ]
+            
+            logger.info(f"Possible paths to check: {possible_paths}")
             
             df = None
             for path in possible_paths:
@@ -190,6 +195,29 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
             
             if df is None:
                 raise ValueError(f"Could not find uploaded dataset file for ID: {dataset_id}")
+            
+            # Check for validation set if training config indicates it has one
+            validation_df = None
+            has_validation_set = config.get('has_validation_set', False)
+            if has_validation_set:
+                validation_paths = [
+                    os.path.join(temp_dir, f"validation_upload_{dataset_id}.csv"),
+                    os.path.join(temp_dir, f"validation_{dataset_id}.csv")
+                ]
+                
+                for val_path in validation_paths:
+                    try:
+                        if os.path.exists(val_path):
+                            validation_df = pd.read_csv(val_path)
+                            logger.info(f"Loaded validation dataset from {val_path} with shape {validation_df.shape}")
+                            break
+                    except Exception as e:
+                        logger.warning(f"Failed to load validation from {val_path}: {e}")
+                        continue
+                
+                if validation_df is None:
+                    logger.warning("Validation set was expected but not found, proceeding with train-test split")
+                    has_validation_set = False
         
         elif dataset_source == 'local':
             # For local test datasets
@@ -224,6 +252,10 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
         test_size = config.get('test_size', 0.2)
         cv_folds = config.get('cv_folds', 5)
         enable_tuning = config.get('auto_hyperparameter_tuning', True)
+        has_validation_set = config.get('has_validation_set', False)
+        
+        # Adjust validation_size based on whether external validation set is provided
+        validation_size = 0.0 if has_validation_set else 0.15
         
         # Update progress
         self.update_state(
@@ -240,11 +272,12 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
                 df=df,
                 target_column=target_column,
                 test_size=test_size,
-                validation_size=0.15,
+                validation_size=validation_size,
                 cv_folds=cv_folds,
                 enable_hyperparameter_tuning=enable_tuning,
                 algorithms=[algorithm],
-                is_retrain=is_retrain
+                is_retrain=is_retrain,
+                external_validation_set=validation_df if has_validation_set else None
             )
         else:
             # AutoML - try all algorithms
@@ -252,10 +285,11 @@ def train_model_task(self, config: Dict[str, Any]) -> Dict[str, Any]:
                 df=df,
                 target_column=target_column,
                 test_size=test_size,
-                validation_size=0.15,
+                validation_size=validation_size,
                 cv_folds=cv_folds,
                 enable_hyperparameter_tuning=enable_tuning,
-                is_retrain=is_retrain
+                is_retrain=is_retrain,
+                external_validation_set=validation_df if has_validation_set else None
             )
         
         # Update progress

@@ -135,10 +135,20 @@ class AutoMLEngine:
             y_validation = y.iloc[validation_start_idx:]
             
             # Split validation data into train/test (80/20)
-            X_train, X_test, y_train, y_test = train_test_split(
-                X_validation, y_validation, test_size=0.2, random_state=42, 
-                stratify=y_validation if self._is_classification(y_validation) else None
-            )
+            try:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X_validation, y_validation, test_size=0.2, random_state=42, 
+                    stratify=y_validation if self._is_classification(y_validation) else None
+                )
+            except ValueError as e:
+                if "least populated class" in str(e):
+                    # Fall back to non-stratified split if stratification fails
+                    logger.warning(f"Stratified split failed ({str(e)}), falling back to random split")
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X_validation, y_validation, test_size=0.2, random_state=42, stratify=None
+                    )
+                else:
+                    raise e
             logger.info(f"Retraining with validation data - Train: {X_train.shape[0]}, Test: {X_test.shape[0]}")
         else:
             # For initial training, use first 85% of data and split it 80/20
@@ -147,10 +157,20 @@ class AutoMLEngine:
             y_training_pool = y.iloc[:training_end_idx]
             
             # Split the 85% into train/test
-            X_train, X_test, y_train, y_test = train_test_split(
-                X_training_pool, y_training_pool, test_size=test_size/(1-validation_size), random_state=42,
-                stratify=y_training_pool if self._is_classification(y_training_pool) else None
-            )
+            try:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X_training_pool, y_training_pool, test_size=test_size/(1-validation_size), random_state=42,
+                    stratify=y_training_pool if self._is_classification(y_training_pool) else None
+                )
+            except ValueError as e:
+                if "least populated class" in str(e):
+                    # Fall back to non-stratified split if stratification fails
+                    logger.warning(f"Stratified split failed ({str(e)}), falling back to random split")
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X_training_pool, y_training_pool, test_size=test_size/(1-validation_size), random_state=42, stratify=None
+                    )
+                else:
+                    raise e
             logger.info(f"Initial training with 85% data - Train: {X_train.shape[0]}, Test: {X_test.shape[0]}, Reserved: {len(X) - training_end_idx}")
         
         return X_train, X_test, y_train, y_test, preprocessor
@@ -175,7 +195,8 @@ class AutoMLEngine:
         cv_folds: int = 5,
         enable_hyperparameter_tuning: bool = True,
         algorithms: Optional[list] = None,
-        is_retrain: bool = False
+        is_retrain: bool = False,
+        external_validation_set: Optional[pd.DataFrame] = None
     ) -> Dict[str, Any]:
         """
         Automatically train and select the best model.
@@ -196,10 +217,100 @@ class AutoMLEngine:
         logger.info("Starting AutoML training...")
         start_time = datetime.utcnow()
         
-        # Prepare data
-        X_train, X_test, y_train, y_test, preprocessor = self.prepare_data(
-            df, target_column, test_size, validation_size, is_retrain
-        )
+        # Validate target column before proceeding
+        if target_column not in df.columns:
+            raise ValueError(f"Target column '{target_column}' not found in dataset")
+        
+        y_full = df[target_column]
+        
+        # Check for too many unique values (likely an ID column)
+        unique_ratio = y_full.nunique() / len(y_full)
+        if unique_ratio > 0.95:
+            raise ValueError(f"Target column '{target_column}' appears to be a unique identifier (95%+ unique values). Please select a different target column for prediction.")
+        
+        # For classification problems, check minimum class sizes
+        if self._is_classification(y_full):
+            class_counts = y_full.value_counts()
+            min_class_size = class_counts.min()
+            
+            # If external validation is provided, we need at least 2 samples per class for stratified splitting
+            # If no external validation, we need enough for both CV folds and train/test split
+            min_required = 2 if external_validation_set is not None else max(cv_folds, 2)
+            
+            if min_class_size < min_required:
+                problematic_classes = class_counts[class_counts < min_required].index.tolist()
+                if external_validation_set is not None:
+                    error_msg = f"Classification target '{target_column}' has classes with too few samples: {dict(class_counts[class_counts < min_required])}. Each class needs at least 2 samples when using an external validation set."
+                else:
+                    error_msg = f"Classification target '{target_column}' has classes with too few samples: {dict(class_counts[class_counts < min_required])}. Each class needs at least {min_required} samples for {cv_folds}-fold cross-validation."
+                
+                raise ValueError(error_msg)
+        
+        # Prepare data differently based on whether external validation set is provided
+        if external_validation_set is not None:
+            logger.info("Using external validation set for evaluation")
+            
+            # Use entire training dataset for training (no internal validation split)
+            X = df.drop(columns=[target_column])
+            y = df[target_column]
+            
+            # Handle missing values in target
+            if y.isnull().sum() > 0:
+                logger.warning(f"Removing {y.isnull().sum()} rows with missing target values from training set")
+                mask = ~y.isnull()
+                X = X[mask]
+                y = y[mask]
+            
+            # Prepare external validation set
+            X_val_external = external_validation_set.drop(columns=[target_column])
+            y_val_external = external_validation_set[target_column]
+            
+            # Handle missing values in validation target
+            if y_val_external.isnull().sum() > 0:
+                logger.warning(f"Removing {y_val_external.isnull().sum()} rows with missing target values from validation set")
+                val_mask = ~y_val_external.isnull()
+                X_val_external = X_val_external[val_mask]
+                y_val_external = y_val_external[val_mask]
+            
+            # Create train/test split from training data only
+            try:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=test_size, random_state=42,
+                    stratify=y if self._is_classification(y) else None
+                )
+            except ValueError as e:
+                if "least populated class" in str(e):
+                    # Fall back to non-stratified split if stratification fails
+                    logger.warning(f"Stratified split failed ({str(e)}), falling back to random split")
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=test_size, random_state=42, stratify=None
+                    )
+                else:
+                    raise e
+            
+            # Identify column types for preprocessing
+            numeric_columns = X_train.select_dtypes(include=[np.number]).columns.tolist()
+            categorical_columns = X_train.select_dtypes(include=['object', 'category']).columns.tolist()
+            
+            logger.info(f"Found {len(numeric_columns)} numeric and {len(categorical_columns)} categorical columns")
+            
+            # Create preprocessing pipeline
+            preprocessor = ColumnTransformer(
+                transformers=[
+                    ('num', StandardScaler(), numeric_columns),
+                    ('cat', OneHotEncoder(drop='first', handle_unknown='ignore'), categorical_columns)
+                ],
+                remainder='passthrough'
+            )
+            
+            logger.info(f"External validation mode - Train: {X_train.shape[0]}, Test: {X_test.shape[0]}, External Val: {X_val_external.shape[0]}")
+        else:
+            # Use existing prepare_data method for standard train/validation/test split
+            X_train, X_test, y_train, y_test, preprocessor = self.prepare_data(
+                df, target_column, test_size, validation_size, is_retrain
+            )
+            X_val_external = None
+            y_val_external = None
         
         # Determine problem type
         is_classification = self._is_classification(y_train)
@@ -294,6 +405,13 @@ class AutoMLEngine:
         model_id = f"model_{int(datetime.utcnow().timestamp())}"
         model_path = self.save_model(best_model, model_id)
         
+        # Evaluate on external validation set if provided
+        external_validation_metrics = None
+        if X_val_external is not None and y_val_external is not None:
+            logger.info("Evaluating best model on external validation set")
+            external_validation_metrics = self._evaluate_model(best_model, X_val_external, y_val_external, is_classification)
+            logger.info(f"External validation metrics: {external_validation_metrics}")
+        
         # Calculate training duration
         training_duration = (datetime.utcnow() - start_time).total_seconds()
         
@@ -306,14 +424,17 @@ class AutoMLEngine:
             'training_duration_seconds': training_duration,
             'best_cv_score': float(best_score),
             'best_test_metrics': results[best_algorithm]['test_metrics'],
+            'external_validation_metrics': external_validation_metrics,
             'best_hyperparameters': results[best_algorithm]['best_params'],
             'all_results': {k: {kk: vv for kk, vv in v.items() if kk != 'model'} for k, v in results.items()},
             'dataset_info': {
                 'total_samples': len(df),
                 'train_samples': len(X_train),
                 'test_samples': len(X_test),
+                'validation_samples': len(X_val_external) if X_val_external is not None else 0,
                 'features': X_train.shape[1],
-                'target_column': target_column
+                'target_column': target_column,
+                'has_external_validation': X_val_external is not None
             }
         }
         

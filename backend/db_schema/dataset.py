@@ -76,6 +76,7 @@ class DatasetUploadResponse(BaseModel):
     dataset_id: str = Field(..., description="Unique dataset ID")
     message: str = Field(..., description="Upload status message")
     preview: DatasetPreview = Field(..., description="Dataset preview")
+    target_suggestions: Optional[dict] = Field(None, description="Suggestions for target column selection")
     
     class Config:
         json_encoders = {

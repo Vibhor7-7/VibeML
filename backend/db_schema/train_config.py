@@ -62,7 +62,8 @@ class TrainConfig(BaseModel):
     
     # Training parameters
     test_size: float = Field(0.15, description="Proportion of data for testing from training split", ge=0.1, le=0.3)
-    validation_size: float = Field(0.15, description="Proportion of data reserved for retraining", ge=0.1, le=0.3)
+    validation_size: float = Field(0.15, description="Proportion of data reserved for retraining", ge=0.0, le=0.3)
+    has_validation_set: bool = Field(False, description="Whether external validation set is provided")
     random_state: int = Field(42, description="Random seed for reproducibility")
     cross_validation_folds: int = Field(5, description="Number of CV folds", ge=2, le=10)
     

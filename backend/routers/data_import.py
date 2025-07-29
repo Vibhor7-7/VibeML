@@ -24,6 +24,7 @@ router = APIRouter(prefix="/import", tags=["data-import"])
 @router.post("/upload", response_model=DatasetUploadResponse)
 async def upload_dataset(
     file: UploadFile = File(...),
+    validation_file: UploadFile = File(None),
     name: str = None,
     description: str = None,
     target_column: str = None,
@@ -46,6 +47,9 @@ async def upload_dataset(
         dataset_name = name or file.filename.split('.')[0]
         dataset_info = _generate_dataset_info(df, dataset_name, target_column)
         
+        # Analyze columns for target selection suggestions
+        target_suggestions = _analyze_target_columns(df)
+        
         # Create preview with sample data
         sample_data = df.head(5).to_dict('records')
         preview = DatasetPreview(
@@ -54,13 +58,68 @@ async def upload_dataset(
             head_rows=len(sample_data)
         )
         
-        # TODO: Save dataset to storage
-        dataset_id = f"dataset_{hash(dataset_name)}"
+        # Save dataset to temporary storage for training
+        import tempfile
+        import os
+        import time
+        
+        # Generate a unique dataset ID
+        dataset_id = f"dataset_{int(time.time() * 1000000)}"
+        
+        # Save the dataset to temp directory
+        temp_dir = tempfile.gettempdir()
+        dataset_path = os.path.join(temp_dir, f"dataset_upload_{dataset_id}.csv")
+        backup_path = os.path.join(temp_dir, f"{dataset_id}.csv")
+        
+        # Save the dataset files
+        df.to_csv(dataset_path, index=False)
+        df.to_csv(backup_path, index=False)
+        
+        # Handle validation file if provided
+        validation_info = None
+        if validation_file and validation_file.filename:
+            try:
+                # Read validation file content
+                validation_content = await validation_file.read()
+                
+                # Determine file type and read accordingly
+                if validation_file.filename.endswith('.csv'):
+                    validation_df = pd.read_csv(io.BytesIO(validation_content))
+                elif validation_file.filename.endswith(('.xlsx', '.xls')):
+                    validation_df = pd.read_excel(io.BytesIO(validation_content))
+                else:
+                    raise HTTPException(status_code=400, detail="Unsupported validation file format. Please use CSV or Excel files.")
+                
+                # Validate that validation set has same columns as training set
+                if set(validation_df.columns) != set(df.columns):
+                    raise HTTPException(status_code=400, detail="Validation set must have the same columns as training set.")
+                
+                # Save validation file
+                validation_path = os.path.join(temp_dir, f"validation_upload_{dataset_id}.csv")
+                validation_backup_path = os.path.join(temp_dir, f"validation_{dataset_id}.csv")
+                
+                validation_df.to_csv(validation_path, index=False)
+                validation_df.to_csv(validation_backup_path, index=False)
+                
+                validation_info = {
+                    "rows": len(validation_df),
+                    "columns": len(validation_df.columns),
+                    "path": validation_path,
+                    "name": validation_file.filename
+                }
+                
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to process validation file: {str(e)}")
+        
+        response_message = f"Dataset '{dataset_name}' uploaded successfully to {dataset_path}"
+        if validation_info:
+            response_message += f". Validation set ({validation_info['rows']} rows) also uploaded."
         
         return DatasetUploadResponse(
             dataset_id=dataset_id,
-            message=f"Dataset '{dataset_name}' uploaded successfully",
-            preview=preview
+            message=response_message,
+            preview=preview,
+            target_suggestions=target_suggestions
         )
         
     except Exception as e:
@@ -331,3 +390,64 @@ def _generate_dataset_info(df: pd.DataFrame, name: str, target_column: str = Non
         column_info=columns_info,
         target_column=target_column
     )
+
+
+def _analyze_target_columns(df: pd.DataFrame) -> dict:
+    """Analyze columns for target selection suggestions and warnings."""
+    suggestions = {
+        'good_targets': [],
+        'problematic_targets': []
+    }
+    
+    for col in df.columns:
+        col_data = df[col]
+        unique_ratio = col_data.nunique() / len(col_data)
+        
+        # Skip likely ID columns (too many unique values)
+        if unique_ratio > 0.95:
+            suggestions['problematic_targets'].append({
+                'column': col,
+                'reason': 'unique_id',
+                'message': f'Column appears to be a unique identifier ({col_data.nunique()}/{len(col_data)} unique values)'
+            })
+            continue
+        
+        # Check if it's a good classification target
+        if pd.api.types.is_numeric_dtype(col_data):
+            if col_data.nunique() <= 10 and unique_ratio < 0.5:
+                # Numeric classification target - check class sizes
+                class_counts = col_data.value_counts()
+                min_class_size = class_counts.min()
+                
+                if min_class_size >= 2:
+                    suggestions['good_targets'].append(col)
+                else:
+                    suggestions['problematic_targets'].append({
+                        'column': col,
+                        'reason': 'insufficient_samples',
+                        'message': f'Has classes with only {min_class_size} sample(s): {dict(class_counts[class_counts < 2])}'
+                    })
+            elif col_data.nunique() > 10 and unique_ratio > 0.1:
+                # Good regression target
+                suggestions['good_targets'].append(col)
+        else:
+            # Categorical target
+            class_counts = col_data.value_counts()
+            min_class_size = class_counts.min()
+            
+            if min_class_size >= 2 and col_data.nunique() <= 20:
+                suggestions['good_targets'].append(col)
+            elif min_class_size < 2:
+                suggestions['problematic_targets'].append({
+                    'column': col,
+                    'reason': 'insufficient_samples',
+                    'message': f'Has classes with only {min_class_size} sample(s): {dict(class_counts[class_counts < 2])}'
+                })
+            elif col_data.nunique() > 20:
+                suggestions['problematic_targets'].append({
+                    'column': col,
+                    'reason': 'too_many_categories',
+                    'message': f'Too many categories ({col_data.nunique()}) for classification'
+                })
+    
+    return suggestions

@@ -1,9 +1,9 @@
 """
 Import router for dataset upload and management endpoints.
 """
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import pandas as pd
 import io
 
@@ -19,14 +19,15 @@ router = APIRouter(prefix="/import", tags=["data-import"])
 @router.post("/upload", response_model=DatasetUploadResponse)
 async def upload_dataset(
     file: UploadFile = File(...),
-    name: str = None,
-    description: str = None,
-    target_column: str = None,
+    dataset_name: str = Form(None),
+    description: str = Form(None),
+    target_column: str = Form(None),
+    validation_file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
 ):
-    """Upload a dataset file."""
+    """Upload a dataset file with optional validation set."""
     try:
-        # Read file content
+        # Read main file content
         content = await file.read()
         
         # Determine file type and read accordingly
@@ -37,8 +38,36 @@ async def upload_dataset(
         else:
             raise HTTPException(status_code=400, detail="Unsupported file format. Please use CSV or Excel files.")
         
+        # Read validation file if provided
+        validation_df = None
+        validation_message = ""
+        if validation_file:
+            validation_content = await validation_file.read()
+            
+            # Determine validation file type and read accordingly
+            if validation_file.filename.endswith('.csv'):
+                validation_df = pd.read_csv(io.BytesIO(validation_content))
+            elif validation_file.filename.endswith(('.xlsx', '.xls')):
+                validation_df = pd.read_excel(io.BytesIO(validation_content))
+            else:
+                raise HTTPException(status_code=400, detail="Unsupported validation file format. Please use CSV or Excel files.")
+            
+            # Validate that validation set has same columns as training set
+            missing_cols = set(df.columns) - set(validation_df.columns)
+            extra_cols = set(validation_df.columns) - set(df.columns)
+            
+            if missing_cols or extra_cols:
+                error_msg = "Validation set columns do not match training set columns."
+                if missing_cols:
+                    error_msg += f" Missing columns: {list(missing_cols)}."
+                if extra_cols:
+                    error_msg += f" Extra columns: {list(extra_cols)}."
+                raise HTTPException(status_code=400, detail=error_msg)
+            
+            validation_message = f" Validation set ({len(validation_df)} rows) also uploaded."
+        
         # Generate dataset info
-        dataset_name = name or file.filename.split('.')[0]
+        dataset_name = dataset_name or file.filename.split('.')[0]
         dataset_info = _generate_dataset_info(df, dataset_name, target_column)
         
         # Create preview with sample data
@@ -49,15 +78,117 @@ async def upload_dataset(
             head_rows=len(sample_data)
         )
         
-        # TODO: Save dataset to storage
-        dataset_id = f"dataset_{hash(dataset_name)}"
+        # Save dataset to temporary storage for training
+        import tempfile
+        import os
+        import time
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        # Analyze columns for target selection suggestions
+        def suggest_target_columns(df: pd.DataFrame) -> dict:
+            """Suggest good target columns and warn about problematic ones."""
+            suggestions = {
+                'good_targets': [],
+                'avoid_targets': [],
+                'warnings': []
+            }
+            
+            for col in df.columns:
+                col_data = df[col]
+                unique_ratio = col_data.nunique() / len(col_data)
+                
+                # Skip likely ID columns
+                if unique_ratio > 0.95:
+                    suggestions['avoid_targets'].append({
+                        'column': col,
+                        'reason': f'Appears to be unique identifier ({col_data.nunique()}/{len(col_data)} unique values)'
+                    })
+                    continue
+                
+                # Check if it's a good classification target
+                if pd.api.types.is_numeric_dtype(col_data):
+                    if col_data.nunique() <= 10 and unique_ratio < 0.5:
+                        # Good numeric classification target
+                        class_counts = col_data.value_counts()
+                        min_class_size = class_counts.min()
+                        if min_class_size >= 2:
+                            suggestions['good_targets'].append({
+                                'column': col,
+                                'type': 'classification',
+                                'classes': col_data.nunique(),
+                                'reason': f'Numeric with {col_data.nunique()} balanced classes'
+                            })
+                        else:
+                            suggestions['warnings'].append({
+                                'column': col,
+                                'reason': f'Has classes with only {min_class_size} sample(s)'
+                            })
+                    elif col_data.nunique() > 10 and unique_ratio > 0.1:
+                        # Good regression target
+                        suggestions['good_targets'].append({
+                            'column': col,
+                            'type': 'regression',
+                            'reason': f'Continuous numeric values ({col_data.nunique()} unique)'
+                        })
+                else:
+                    # Categorical target
+                    class_counts = col_data.value_counts()
+                    min_class_size = class_counts.min()
+                    if min_class_size >= 2 and col_data.nunique() <= 20:
+                        suggestions['good_targets'].append({
+                            'column': col,
+                            'type': 'classification',
+                            'classes': col_data.nunique(),
+                            'reason': f'Categorical with {col_data.nunique()} balanced classes'
+                        })
+                    elif min_class_size < 2:
+                        suggestions['warnings'].append({
+                            'column': col,
+                            'reason': f'Has classes with only {min_class_size} sample(s)'
+                        })
+            
+            return suggestions
+        
+        target_suggestions = suggest_target_columns(df)
+        
+        # Generate a unique dataset ID
+        dataset_id = f"dataset_{int(time.time() * 1000000)}"
+        
+        # Save the dataset to temp directory
+        temp_dir = tempfile.gettempdir()
+        dataset_path = os.path.join(temp_dir, f"dataset_upload_{dataset_id}.csv")
+        backup_path = os.path.join(temp_dir, f"{dataset_id}.csv")
+        
+        # Save the dataset files
+        try:
+            df.to_csv(dataset_path, index=False)
+            df.to_csv(backup_path, index=False)
+            logger.info(f"Successfully saved training dataset to {dataset_path}")
+            
+            # Save validation file if provided
+            if validation_df is not None:
+                validation_path = os.path.join(temp_dir, f"validation_upload_{dataset_id}.csv")
+                validation_backup_path = os.path.join(temp_dir, f"validation_{dataset_id}.csv")
+                
+                validation_df.to_csv(validation_path, index=False)
+                validation_df.to_csv(validation_backup_path, index=False)
+                logger.info(f"Successfully saved validation dataset to {validation_path}")
+                
+        except Exception as e:
+            logger.error(f"Error saving dataset files: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to save dataset files: {str(e)}")
         
         return DatasetUploadResponse(
             dataset_id=dataset_id,
-            message=f"Dataset '{dataset_name}' uploaded successfully",
-            preview=preview
+            message=f"Dataset '{dataset_name}' uploaded successfully to {dataset_path}.{validation_message}",
+            preview=preview,
+            target_suggestions=target_suggestions
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload dataset: {str(e)}")
 

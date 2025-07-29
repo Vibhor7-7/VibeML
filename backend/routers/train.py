@@ -55,7 +55,9 @@ async def start_training(
             'algorithm': config.algorithm.value if config.algorithm.value != 'auto' else None,
             'test_size': config.test_size,
             'cv_folds': config.cross_validation_folds,  # Use the correct field from schema
-            'auto_hyperparameter_tuning': config.auto_hyperparameter_tuning
+            'auto_hyperparameter_tuning': config.auto_hyperparameter_tuning,
+            'has_validation_set': config.has_validation_set,
+            'validation_size': config.validation_size
         }
         
         # Start Celery training task
